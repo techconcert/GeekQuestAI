@@ -59,6 +59,42 @@ static void test_soak() {
   for (int a = 0; a < GQ_AREA_COUNT; a++) if (!seen_area[a]) { std::printf("area %d never seen\n", a); std::exit(1); }
 }
 
+// The number starts small (one old server) and only doubles once the second server is racked, wired and patched.
+static void test_small_start() {
+  sim_start(21, 9 * 60);
+  int t0 = q(GQ_Q_TLOPS);
+  CHECK(t0 > 0 && t0 < 10 && q(GQ_Q_RACKS) == 1);
+  int minutes = 0;
+  while (q(GQ_Q_RACKS) < 2 && minutes < 60) { sim_minutes(1); minutes++; CHECK(q(GQ_Q_RACKS) >= 2 || q(GQ_Q_TLOPS) < 10); }
+  CHECK(q(GQ_Q_RACKS) == 2 && q(GQ_Q_TLOPS) > t0);
+  std::printf("small start: %d T, second server online after %d min\n", t0, minutes);
+}
+
+// The hardware store: every purchase walks to the store, pays, and carries the goods to the dock (cables to the network room).
+static void test_store() {
+  for (int kind = 0; kind < 5; kind++) {
+    sim_start((uint32_t)(300 + kind), 10 * 60);
+    gc_debug(GQ_DBG_FORCE_JOB, GQ_ACT_SHOP | (kind << 8));
+    int crates = q(GQ_Q_CRATES), panels = 0, in_store = 0, secs = 0, areas = 0;
+    (void)panels;
+    sim_seconds_cb(300, [&]() {
+      if (q(GQ_Q_HERO_AREA) == GQ_AREA_STORE) in_store++;
+      secs++; areas |= 1 << q(GQ_Q_HERO_AREA);
+    });
+    CHECK(in_store > 20);
+    CHECK(secs == 300);
+    if (kind == 3) CHECK(areas & (1 << GQ_AREA_NET));
+    else CHECK(q(GQ_Q_CRATES) >= crates);          // the goods reached the dock (or were already racked)
+    char t[24];
+    dc_status_text(t, 24); CHECK(std::strlen(t) <= 20);
+    CHECK(q(GQ_Q_ABORTS) == 0);
+  }
+  // the store is shut at night: he does not go shopping then
+  sim_start(77, 22 * 60);
+  sim_minutes(60);
+  CHECK(q(GQ_Q_HERO_AREA) != GQ_AREA_STORE);
+}
+
 // Each mission runs to its end by itself, 20 to 30 rooms, within the time limit.
 static void test_missions() {
   for (int type = 1; type < GQ_MIS_COUNT; type++)
@@ -95,7 +131,7 @@ static void test_save() {
   CHECK(gc_save_export(a, GC_SAVE_BYTES - 1) == 0);
   sim_start(99, 9 * 60);
   gc_set_option(GC_OPT_SLEEP_MODE, 1);
-  CHECK(q(GQ_Q_RACKS) == 2);
+  CHECK(q(GQ_Q_RACKS) == 1);
   CHECK(gc_save_import(a, GC_SAVE_BYTES) == 1);
   CHECK(q(GQ_Q_RACKS) == racks && q(GQ_Q_DAY) == day);
   CHECK(q(GQ_Q_MISSION) == GQ_MIS_FIBER && q(GQ_Q_MISSION_ROOM) == room);
@@ -235,6 +271,8 @@ int main() {
   test_sleep_modes();
   test_no_clock();
   test_glitch();
+  test_small_start();
+  test_store();
   test_missions();
   test_save();
   test_soak();

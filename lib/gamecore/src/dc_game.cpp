@@ -67,7 +67,7 @@ int dc_alarm(void) {
 
 // Output in T (tera). Racks count once they are wired and patched.
 static uint32_t tlops_now(void) {
-  static const uint16_t TIER[4] = {0, 20, 250, 3000};
+  static const uint16_t TIER[4] = {0, 6, 250, 3000};
   uint32_t base = 0;
   if (D.blip) return 0;
   for (int i = 0; i < DC_RACKS; i++)
@@ -118,7 +118,7 @@ static void build_hall(void) {
   for (int y = 5; y <= 11; y += 3)
     for (int x = 2; x <= 12; x++) if (x != 7) g_ground[y][x] = T_VENT;
   door(2, 2, T_DOOR); door(7, 2, T_DOOR); door(12, 2, T_STAIRS);
-  door(4, 13, T_DOOR); door(10, 13, T_DOOR);
+  door(4, 13, T_DOOR); door(7, 13, T_DOOR); door(10, 13, T_DOOR);
   for (int i = 0; i < DC_RACKS; i++) {
     int r = i / 10, open = 1;
     if (r > 0) for (int k = (r - 1) * 10; k < r * 10; k++) if (!(D.s.rack[k] & RK_TIER)) open = 0;
@@ -185,6 +185,18 @@ static void build_roof(void) {
     if (D.s.panel[i] || open) put(dc_panel_x(i), dc_panel_y(i), panel_tile(D.s.panel[i]));
   }
   put(10, 4, T_INVERTER); put(13, 4, T_AC); put(11, 8, T_AC); put(12, 8, T_AC);
+}
+
+static void build_store(void) {
+  row(1, T_WALLTOP, 1); row(2, T_WALL, 1);
+  rows(3, 12, T_STORE_FLOOR);
+  row(13, T_WALLTOP, 1);
+  door(7, 2, T_DOOR);
+  g_obj[2][5] = T_SHOP_SIGN; g_obj[2][9] = T_SHOP_SIGN;
+  for (int x = 1; x <= 13; x++) if (x < 6 || x > 8) put(x, 3, (x & 1) ? T_SHELF_A : T_SHELF_B);
+  for (int x = 2; x <= 4; x++) { put(x, 7, (x & 1) ? T_SHELF_B : T_SHELF_A); put(x + 8, 7, (x & 1) ? T_SHELF_A : T_SHELF_B); }
+  put(6, 10, T_COUNTER_L); put(7, 10, T_COUNTER_R); put(8, 10, T_COUNTER_R);
+  put(1, 12, T_CRATE); put(13, 12, T_PLANT); put(13, 10, T_CONE);
 }
 
 static void build_office(void) {
@@ -313,6 +325,7 @@ static void build_map(void) {
     case A_WATER: build_water(); break;
     case A_ROOF: build_roof(); break;
     case A_OFFICE: build_office(); break;
+    case A_STORE: build_store(); break;
     default: build_room(); break;
   }
   s_nav_x = -1;
@@ -352,8 +365,8 @@ static void enter_area(int area, int tx, int ty) {
 }
 
 // Door tile in the hall that leads to an area, and the area's own door tile.
-static const uint8_t HALL_DOOR[A_COUNT][2] = {{7, 3}, {7, 2}, {4, 13}, {10, 13}, {12, 2}, {2, 2}, {7, 3}};
-static const uint8_t AREA_DOOR[A_COUNT][2] = {{7, 3}, {7, 13}, {4, 2}, {10, 2}, {12, 13}, {2, 13}, {7, 3}};
+static const uint8_t HALL_DOOR[A_COUNT][2] = {{7, 3}, {7, 2}, {4, 13}, {10, 13}, {12, 2}, {2, 2}, {7, 13}, {7, 3}};
+static const uint8_t AREA_DOOR[A_COUNT][2] = {{7, 3}, {7, 13}, {4, 2}, {10, 2}, {12, 13}, {2, 13}, {7, 2}, {7, 3}};
 
 // One step of walking toward a tile of the current area. Returns 1 when he stands on it.
 static int walk_to(int tx, int ty, uint32_t dt) {
@@ -858,6 +871,36 @@ static void job_rounds(uint32_t dt) {
   D.arg2++; D.ph = 0;
 }
 
+// A trip to the hardware store (open 08:00 to 19:00, everything is free). arg: 0 server, 1 rack kit, 2 chips, 3 cables, 4 solar panel.
+static int store_open(void) { int m = D.s.minute; return m >= 8 * 60 && m < 19 * 60; }
+
+static void job_shop(uint32_t dt) {
+  static const uint8_t SHELF[5][2] = {{3, 4}, {5, 4}, {10, 4}, {12, 4}, {3, 8}};
+  int k = D.arg < 0 || D.arg > 4 ? 0 : D.arg;
+  switch (D.ph) {
+    case 0: if (go(A_STORE, SHELF[k][0], SHELF[k][1], dt)) { D.hdir = DIR_UP; D.ph = 1; } return;
+    case 1: if (work(dt, 8000, I_CLIPBOARD, POSE_STAND)) { D.hitem = k == 4 ? I_CARRY_PANEL : I_CARRY_CRATE; D.ph = 2; } return;
+    case 2: if (go(A_STORE, 7, 11, dt)) { D.hdir = DIR_UP; D.ph = 3; } return;
+    case 3: if (work(dt, 6000, I_BUBBLE, POSE_STAND)) D.ph = 4; return;
+    case 4: {
+      if (k == 3) { if (go(A_NET, 12, 11, dt)) { D.hdir = DIR_RIGHT; D.ph = 5; } return; }
+      int n = D.s.crates_srv + D.s.crates_pan;
+      if (n >= 8) { job_done(); return; }                          // the dock is full: he keeps it for later (nothing lost)
+      if (go(A_DOCK, crate_spot_x(n), crate_spot_y(n), dt)) { D.hdir = DIR_UP; D.ph = 5; }
+      return;
+    }
+    case 5:
+      if (!work(dt, 3000, k == 3 ? I_SNIPS : I_BUBBLE, POSE_STAND)) return;
+      if (k == 4) { if (D.s.crates_srv + D.s.crates_pan < 8 && panels_total() + D.s.crates_pan < DC_PANELS) D.s.crates_pan++; }
+      else if (k != 3 && D.s.crates_srv + D.s.crates_pan < 8) D.s.crates_srv++;
+      D.hitem = -1;
+      rebuild(A_DOCK); touch();
+      job_done();
+      return;
+    default: job_done(); return;
+  }
+}
+
 static void job_coffee(uint32_t dt) {
   switch (D.ph) {
     case 0: if (go(A_OFFICE, 7, 4, dt)) { D.hdir = DIR_UP; D.ph = 1; } return;
@@ -942,11 +985,17 @@ static void pick_job(void) {
     if ((D.s.rack[i] & RK_TIER) && (D.s.rack[i] & RK_DONE) != RK_DONE) { job_start(GQ_ACT_INSTALL, 0); return; }
   if (D.s.crates_srv) { job_start(GQ_ACT_INSTALL, 0); return; }
   if (D.s.crates_pan) { job_start(GQ_ACT_PANEL, 0); return; }
+  if (store_open() && dc_racks_done() < 3 && !D.truck) { job_start(GQ_ACT_SHOP, 0); return; }   // early on he buys the next server himself
   if (D.ev_pending) { int e = D.ev_pending; D.ev_pending = 0; job_start(GQ_ACT_EVENT, e); return; }
   int day = m >= 7 * 60 && m < 19 * 60;
   if (day && first_panel(PN_CRACKED, PN_DIRTY) >= 0 && (D.idle_n & 1)) { D.idle_n++; job_start(GQ_ACT_CLEAN, 0); return; }
   D.idle_n++;
-  switch (gc_rnd() % 10) {
+  switch (gc_rnd() % 12) {
+    case 10: case 11: {
+      int n = D.s.crates_srv + D.s.crates_pan;
+      if (store_open() && n < 5) { job_start(GQ_ACT_SHOP, (int)(gc_rnd() % (panels_total() < DC_PANELS ? 5u : 4u))); return; }
+      job_start(GQ_ACT_ROUNDS, 0); return;
+    }
     case 0: case 1: case 2: case 3: job_start(GQ_ACT_ROUNDS, 0); return;
     case 4: job_start(GQ_ACT_COFFEE, 0); return;
     case 5: job_start(GQ_ACT_INSPECT, A_NET); return;
@@ -960,7 +1009,7 @@ static void pick_job(void) {
 static void hero_tick(uint32_t dt) {
   if (D.job == GQ_ACT_NONE) pick_job();
   // idle jobs give way at once; a job that hangs is dropped (he walks home through the hall)
-  if (D.job <= GQ_ACT_CLEAN && D.hitem < 0 && emergency()) { job_done(); pick_job(); }
+  if (D.job <= GQ_ACT_SHOP && D.hitem < 0 && emergency()) { job_done(); pick_job(); }
   D.job_ms += dt;
   if (D.job_ms > 25u * 60 * 1000 && D.job != GQ_ACT_MISSION && D.job != GQ_ACT_SLEEP && D.job != GQ_ACT_REST) {
     if (D.aborts < 65535) D.aborts++;
@@ -973,6 +1022,7 @@ static void hero_tick(uint32_t dt) {
     case GQ_ACT_COFFEE: job_coffee(dt); break;
     case GQ_ACT_INSPECT: job_inspect(dt); break;
     case GQ_ACT_CLEAN: job_clean(dt); break;
+    case GQ_ACT_SHOP: job_shop(dt); break;
     case GQ_ACT_EVENT: job_event(dt); break;
     case GQ_ACT_PANEL: job_panel(dt); break;
     case GQ_ACT_INSTALL: job_install(dt); break;
@@ -1049,8 +1099,8 @@ static void defaults(DcSave* s) {
   s->magic = SAVE_MAGIC; s->version = SAVE_VERSION; s->size = GC_SAVE_BYTES;
   s->rng = 0x1234567u;
   s->day = 1; s->minute = 9 * 60;
-  s->rack[0] = s->rack[1] = 1 | RK_DONE;
-  s->crates_srv = 2;            // two servers already wait on the dock
+  s->rack[0] = 1 | RK_DONE;     // one old server runs: the number starts small until he builds the second
+  s->crates_srv = 1;            // the second one waits on the dock
   for (int i = 0; i < 4; i++) s->panel[i] = PN_OK;
   s->m_day = 0;
 }
@@ -1180,6 +1230,14 @@ void dc_status_text(char* buf, int cap) {
       t = D.ph < 2 ? DC_PS("FETCHING HARDWARE") : (D.ph == 2 ? DC_PS("CARRYING HARDWARE") : (D.ph == 3 ? DC_PS("RACKING HARDWARE") :
           (D.ph <= 6 ? DC_PS("PULLING CABLE") : (D.ph <= 8 ? DC_PS("PATCHING FIBER") : DC_PS("RACK IS ONLINE")))));
       break;
+    case GQ_ACT_SHOP: {
+      int k = D.arg < 0 || D.arg > 4 ? 0 : D.arg;
+      if (D.ph == 0 && D.area != A_STORE) t = DC_PS("OFF TO THE STORE");
+      else if (D.ph == 0 || D.ph == 1) t = k == 0 ? DC_PS("BUYING A SERVER") : (k == 1 ? DC_PS("BUYING RACKS") : (k == 2 ? DC_PS("BUYING CHIPS") : (k == 3 ? DC_PS("BUYING CABLES") : DC_PS("BUYING SOLAR PANEL"))));
+      else if (D.ph <= 3) t = DC_PS("AT THE CHECKOUT");
+      else t = k == 3 ? DC_PS("CABLES TO NET ROOM") : DC_PS("CARRYING PURCHASE");
+      break;
+    }
     case GQ_ACT_RECEIVE: t = DC_PS("SIGNING FOR DELIVERY"); break;
     case GQ_ACT_WATER: t = D.ph < 8 ? DC_PS("FIXING WATER PLANT") : DC_PS("COOLING IS BACK"); break;
     case GQ_ACT_FIGHT: t = DC_PS("ROGUE ROBOT!"); break;
@@ -1390,6 +1448,7 @@ extern "C" void gc_debug(int cmd, int32_t arg) {
         int job = arg & 255, a = (arg >> 8) & 15;
         if (job == GQ_ACT_INSPECT && a != A_WATER && a != A_ROOF) a = A_NET;
         if (job == GQ_ACT_EVENT && (a < 1 || a > 3)) a = 1;
+        if (job == GQ_ACT_SHOP && a > 4) a = 0;
         job_start(job, a);
       }
       break;

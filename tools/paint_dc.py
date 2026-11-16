@@ -160,6 +160,31 @@ sh = T("SHUTTER", Cell("a")); sh.rect(0, 0, 16, 1, "k")
 for yy in range(2, 16, 3):
     sh.rect(0, yy, 16, 1, "d")
 sh.rect(0, 0, 1, 16, "k"); sh.rect(15, 0, 1, 16, "k")
+
+# ------------------------------------------------------------------ hardware store
+sf = T("STORE_FLOOR", Cell("o")); sf.rect(0, 0, 8, 8, "l"); sf.rect(8, 8, 8, 8, "l")
+def shelf(rows):
+    c = Cell(); c.rect(1, 0, 14, 16, "k"); c.rect(2, 1, 12, 14, "d")
+    for yy in (5, 10, 15):
+        c.rect(2, yy - 1, 12, 1, "B")
+    for fn in rows:
+        fn(c)
+    return c
+T("SHELF_A", shelf([
+    lambda c: (c.rect(3, 2, 3, 3, "r"), c.rect(7, 2, 3, 3, "W"), c.rect(11, 3, 2, 2, "Y")),
+    lambda c: (c.rect(3, 7, 4, 2, "G"), c.dots([(3, 6), (5, 6), (4, 9), (6, 9)], "o"), c.rect(8, 6, 4, 3, "a"), c.rect(9, 7, 2, 1, "k")),
+    lambda c: (c.rect(3, 11, 4, 3, "B"), c.rect(8, 11, 4, 3, "o"), c.rect(9, 12, 2, 1, "r")),
+]))
+T("SHELF_B", shelf([
+    lambda c: (c.rect(3, 2, 4, 3, "W"), c.rect(4, 3, 2, 1, "k"), c.rect(8, 2, 4, 3, "W"), c.rect(9, 3, 2, 1, "k")),
+    lambda c: (c.rect(3, 6, 4, 3, "k"), c.rect(4, 7, 2, 1, "r"), c.rect(8, 6, 4, 3, "k"), c.rect(9, 7, 2, 1, "G")),
+    lambda c: (c.rect(3, 11, 3, 3, "a"), c.rect(7, 11, 3, 3, "a"), c.rect(11, 11, 2, 3, "Y")),
+]))
+cl = T("COUNTER_L", Cell()); cl.rect(0, 6, 16, 10, "k"); cl.rect(1, 7, 14, 8, "B"); cl.rect(1, 7, 14, 2, "s"); cl.rect(3, 2, 8, 5, "k"); cl.rect(4, 3, 6, 2, "G"); cl.rect(4, 5, 6, 1, "l")
+cc = T("COUNTER_R", Cell()); cc.rect(0, 6, 16, 10, "k"); cc.rect(1, 7, 14, 8, "B"); cc.rect(1, 7, 14, 2, "s"); cc.rect(5, 3, 6, 4, "k"); cc.rect(6, 4, 4, 2, "B")
+ss = T("SHOP_SIGN", Cell()); ss.rect(1, 3, 14, 10, "k"); ss.rect(2, 4, 12, 8, "Y")
+ss.art(["k.k", "k.k", "kkk", "k.k", "k.k"], 3, 5)
+ss.art(["k...k", "k...k", "k.k.k", "kk.kk", "k...k"], 8, 5)
 # truck: 3 tiles wide, 2 high (cab on the left)
 truck = [
     "................................................",

@@ -44,9 +44,10 @@ int main(int argc, char** argv) {
   gc_set_option(GC_OPT_SLEEP_MODE, 1);
   gc_set_date(2026, 11, 16, 1, 0);
   gc_set_status(0, "IP 192.168.1.42");
-  gc_set_status(3, "FW r1");
+  gc_set_status(3, "FW r2");
   gc_set_live_weather(GQ_W_CLEAR, 235, 0);
   gc_set_clock(9, 5, 1);
+  run(1000); shot(dir, "start");     // a new game: one old server, a small number
   gc_debug(GQ_DBG_ADD_RACKS, 15);
   gc_debug(GQ_DBG_ADD_PANELS, 9);
   run(1000);
@@ -71,6 +72,10 @@ int main(int argc, char** argv) {
   wait(GQ_ACT_INSPECT, 3, GQ_AREA_ROOF); run(3000); shot(dir, "roof");
   gc_debug(GQ_DBG_FORCE_JOB, GQ_ACT_COFFEE);
   wait(GQ_ACT_COFFEE, 1, GQ_AREA_OFFICE); run(3000); shot(dir, "office");
+  gc_debug(GQ_DBG_FORCE_JOB, GQ_ACT_SHOP | (0 << 8));
+  wait(GQ_ACT_SHOP, 1, GQ_AREA_STORE); run(5000); shot(dir, "store");
+  wait(GQ_ACT_SHOP, 3, GQ_AREA_STORE); run(2500); shot(dir, "store_checkout");
+  gc_debug(GQ_DBG_FORCE_JOB, GQ_ACT_COFFEE);
   gc_debug(GQ_DBG_GLITCH, 0);
   wait(GQ_ACT_FIGHT, -1, GQ_AREA_HALL); run(4000); shot(dir, "robot");
   for (int i = 0; i < 3000 && gc_query(GQ_Q_GLITCHES); i++) run(200);

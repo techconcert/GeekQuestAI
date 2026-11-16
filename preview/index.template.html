@@ -52,9 +52,9 @@
       <div class="row"><select id="mission"><option value="1">Cooling loop</option><option value="2">Solar build</option><option value="3">Storm repair</option><option value="4">Fiber hunt</option><option value="5">Robot uprising</option></select>
         <input type="number" id="m-seed" placeholder="seed" style="width:90px"><button id="b-mission">Start mission</button><button id="b-lastroom">Jump to last room</button></div>
       <div class="row"><button id="b-rack1">+1 rack</button><button id="b-rack10">+10 racks</button><button id="b-panel3">+3 solar panels</button></div>
-      <div class="row"><select id="area"><option value="0">Server hall</option><option value="1">Network room</option><option value="2">Loading dock</option><option value="3">Water plant</option><option value="4">Roof</option><option value="5">Office</option></select>
+      <div class="row"><select id="area"><option value="0">Server hall</option><option value="1">Network room</option><option value="2">Loading dock</option><option value="3">Water plant</option><option value="4">Roof</option><option value="5">Office</option><option value="6">Hardware store</option></select>
         <button id="b-goto">Put him there</button></div>
-      <div class="row"><select id="job"><option value="1">Rounds</option><option value="2">Coffee and desk</option><option value="1027">Check the roof</option><option value="771">Check the pumps</option><option value="4">Clean panels</option><option value="261">Fire drill</option><option value="517">Coffee maker broke</option><option value="773">Power blip</option></select>
+      <div class="row"><select id="job"><option value="1">Rounds</option><option value="2">Coffee and desk</option><option value="1027">Check the roof</option><option value="771">Check the pumps</option><option value="4">Clean panels</option><option value="262">Fire drill</option><option value="518">Coffee maker broke</option><option value="774">Power blip</option><option value="5">Shop: a server</option><option value="261">Shop: racks</option><option value="517">Shop: chips</option><option value="773">Shop: cables</option><option value="1029">Shop: a solar panel</option></select>
         <button id="b-job">Do it now</button></div>
     </div>
     <h2>Weather, sleep, network</h2>
@@ -88,8 +88,8 @@
   const DBG = {}; ["SET_DAY", "NEXT_DAY", "SET_MINUTE", "ADD_RACKS", "ADD_PANELS", "DELIVERY", "WATER_DOWN", "GLITCH", "MISSION", "GOTO",
     "SHOW_CARD", "FORCE_JOB", "MISSION_ROOM"].forEach((k, i) => { DBG[k] = i; });
   const NAMES = {
-    HERO_AREA: ["server hall", "network room", "loading dock", "water plant", "roof", "office", "mission room"],
-    HERO_ACT: ["none", "rounds", "coffee", "inspecting", "cleaning panels", "event", "solar panel", "installing", "delivery", "water plant",
+    HERO_AREA: ["server hall", "network room", "loading dock", "water plant", "roof", "office", "hardware store", "mission room"],
+    HERO_ACT: ["none", "rounds", "coffee", "inspecting", "cleaning panels", "shopping", "event", "solar panel", "installing", "delivery", "water plant",
       "mission", "robot fight", "resting", "sleeping"],
     MISSION: ["none", "cooling loop", "solar build", "storm repair", "fiber hunt", "robot uprising"],
   };

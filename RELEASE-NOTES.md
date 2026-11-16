@@ -1,10 +1,8 @@
-What is new in GeekQuestAI r1 (the first build):
+What is new in GeekQuestAI r2:
 
-- A new game for the same clock: a technician runs an AI data center by himself. The only number on screen is TLOPS, top left, and it grows as he builds.
-- Six rooms: server hall, network room, loading dock, water plant, roof and an office with a cot.
-- Deliveries arrive by truck. He carries each server to the hall, racks it, pulls its cable along the trays (you can watch the cable being laid) and patches it in the network room.
-- The water plant fails now and then and halves the output until he fixes it. Solar panels get dirty or crack and he cleans or repairs them.
-- His robo-engineers (crate-bot, sweeper, cable-spider, roof drone) sometimes go rogue; he chases and fights them with a wrench.
-- One long mission a day, 20 to 30 generated rooms: Cooling Loop, Solar Build, Storm Repair, Fiber Hunt, Robot Uprising (with the Overseer at the end). A mission resumes in the same room after a power cut.
-- Kept from GeekQuest: real time, live weather and temperature on the top bar, the sleep schedule (he sleeps on the cot), the bottom message line (what he is doing, the goal, IP address, date, firmware version), settings pages, flash saving and the recovery and update pages.
-- First install is by hand: upload SDP_GeekQuestAI_quest_*.bin on the clock's update page. A GeekQuest save is not carried over; WiFi, weather and sleep settings are.
+- A new game starts small: one old server producing 6 T and one crate waiting on the dock. The number only doubles once he has racked, wired and patched the second server (it used to start at 43 T).
+- New: a hardware store, reached through a new door at the bottom of the server hall. Between jobs, from 08:00 to 19:00, he walks over, picks out cables, racks, servers, chips or a solar panel, pays at the counter (everything is free) and carries the goods to the dock, or the cables to the network room.
+- Early in a new game, when no server is waiting, he goes shopping for the next one himself.
+- The bottom line shows the shopping trip (for example BUYING CHIPS, AT THE CHECKOUT).
+- Browser preview: you can put him in the hardware store or send him shopping (server, racks, chips, cables, solar panel).
+- Same safe base as r1: the update and recovery pages are unchanged. Flash SDP_GeekQuestAI_quest_*.bin on the update page (http://<clock IP>/update). A game saved by r1 carries over (its number reads lower now, because the early servers are smaller).

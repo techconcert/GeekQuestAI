@@ -35,6 +35,10 @@ Screenshots from the game core the clock runs, one per room.
 |---|---|---|
 | ![Roof](docs/screenshots/roof.png) | ![Office](docs/screenshots/office.png) | ![Cot](docs/screenshots/cot.png) |
 
+| Hardware store | At the checkout | A new game |
+|---|---|---|
+| ![Hardware store](docs/screenshots/store.png) | ![Checkout](docs/screenshots/store_checkout.png) | ![Start](docs/screenshots/start.png) |
+
 | Rogue robot | Info card |
 |---|---|
 | ![Rogue robot](docs/screenshots/robot.png) | ![Info card](docs/screenshots/card.png) |
@@ -44,6 +48,12 @@ Screenshots from the game core the clock runs, one per room.
 - **Building.** One or two trucks a day bring crates. A server crate becomes a new rack (or, once the
   hall of 30 racks is full, a GPU and then a liquid-cooling upgrade, then overclocking). A rack counts
   only when it is racked, wired to the network room door and patched. Solar crates become roof panels.
+- **The hardware store.** Between jobs, from 08:00 to 19:00, he walks to the store off the server hall
+  and buys cables, racks, servers, chips or a solar panel (it is all free). The goods go to the dock to be
+  racked, the cables to the network room. Early on, when no server is waiting, he goes shopping for the
+  next one himself.
+- **A small start.** A new game begins with a single old server (6 T) and one crate on the dock; the
+  number doubles once he has racked, wired and patched the second server.
 - **Wiring you can see.** Every rack has its own blue, yellow or red cable in the trays above the rows;
   the trunk down the middle aisle and the weave in the network room grow with the hall.
 - **Things break.** The water plant fails now and then: output halves until he has worked on the pump
