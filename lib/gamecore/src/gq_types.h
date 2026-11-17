@@ -33,7 +33,8 @@ enum {
   GQ_Q_INSTALLS, GQ_Q_FIGHTS, GQ_Q_MISSIONS,
   GQ_Q_CARD,            // 1 while the info card is on screen
   GQ_Q_LIVE_WX, GQ_Q_LIVE_TEMP, GQ_Q_LIVE_FLAGS, GQ_Q_SLEEP_MODE,
-  GQ_Q_PHASE, GQ_Q_ABORTS
+  GQ_Q_PHASE, GQ_Q_ABORTS,
+  GQ_Q_EMPTY_FRAMES     // rack frames built but still empty (the hall grows 1 to 3 at a time)
 };
 
 // gc_debug commands (tests and the browser preview)

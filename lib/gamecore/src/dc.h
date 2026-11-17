@@ -44,7 +44,8 @@ struct DcSave {
   uint16_t missions;         // 96
   uint8_t  ev_done;          // 98  bit 0: today's small event happened
   uint8_t  m_min;            // 99  minutes spent in the running mission
-  uint8_t  reserved[92];     // 100
+  uint8_t  slots;            // 100 rack frames built so far (the hall grows 1 to 3 frames at a time)
+  uint8_t  reserved[91];     // 101
 };
 static_assert(sizeof(DcSave) == GC_SAVE_BYTES, "DcSave is the saved record");
 

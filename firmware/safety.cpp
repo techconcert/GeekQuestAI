@@ -55,7 +55,7 @@ static const uint32_t AP_GRACE_MS = 10UL * 60 * 1000;  // AP stays up 10 min aft
 // RECOVERY-CHANGE (chunk1): CRASHES_FOR_* moved to lib/gqsafe/src/bootlogic.h
 // RECOVERY-CHANGE (chunk1): revision 2 = chunk 1 (design 8.10 rule 6); 3 = R2 (no game saving, automatic restarts on)
 // RECOVERY-CHANGE (R3-0F): revision 5 = R3 plumbing (web() accessor, webout.h, weather strike words, boot kind, spare sector probe)
-static const uint32_t GQ_RECOVERY_REV = 11;
+static const uint32_t GQ_RECOVERY_REV = 12;
 // RECOVERY-CHANGE (chunk1): timers of the restart gates
 static const uint32_t SLOW_STABLE_MS = 6UL * 3600 * 1000;   // `slow` counter cleared after 6 h of uptime
 static const uint32_t AUTO_MIN_UPTIME_MS = 30UL * 60 * 1000;
@@ -309,6 +309,9 @@ void noteConnected() { if (!s_r2.everConnected) { s_r2.everConnected = 1; r2Writ
 
 void setHealth(uint16_t fps10, uint32_t loopMaxMs) { s_fps10 = fps10; s_loopMax = loopMaxMs; }
 void setAsleepFn(bool (*fn)()) { s_asleepFn = fn; }
+// RECOVERY-CHANGE (R3): the owner's "Reset game progress" button; only the game restarts, no setting is touched.
+static void (*s_resetGameFn)() = nullptr;
+void setResetGameFn(void (*fn)()) { s_resetGameFn = fn; }
 void setDepth(int d) { s_depth = d < 0 ? 0 : (d > 100 ? 100 : d); }
 uint32_t msSinceRequest() { return s_lastReq ? millis() - s_lastReq : 0xFFFFFFFFu; }
 
@@ -562,7 +565,8 @@ static void handleRoot() {
       (st.flags & GQS_FLAG_NIGHT) ? " checked" : "", (unsigned)(GC_NIGHT_START_MIN / 60), (unsigned)(GC_NIGHT_START_MIN % 60),
       (unsigned)(GC_NIGHT_END_MIN / 60), (unsigned)(GC_NIGHT_END_MIN % 60));
   o.p(PSTR("<br><button>Apply</button> <small>Saved permanently: survives power cuts and updates.</small></form>"
-           "<form method='post' action='/reset_settings' onsubmit=\"return confirm('Put the game settings (info card interval, quiet at night) back to defaults?')\"><button>Reset game settings</button></form></div>"
+           "<form method='post' action='/reset_settings' onsubmit=\"return confirm('Put the game settings (info card interval, quiet at night) back to defaults?')\"><button>Reset game settings</button></form>"
+           "<form method='post' action='/reset_progress' onsubmit=\"return confirm('Start the game over from day 1? Your settings stay as they are.')\"><button>Reset game progress</button></form></div>"
            "<form method='post' action='/reboot'><button>Restart</button></form> "
            "<form method='post' action='/safemode'><button>Restart in safe mode</button></form>"));
   o.f(PSTR("<p><small>GQ-RECOVERY-REV %u</small></p>"), (unsigned)GQ_RECOVERY_REV);
@@ -766,6 +770,7 @@ static void handleDisplay() {
 }
 
 static void handleResetSettings() { touch(); prefs::resetGame(); redirectHome(); }
+static void handleResetProgress() { touch(); if (s_resetGameFn && !s_updating) s_resetGameFn(); redirectHome(); }   // RECOVERY-CHANGE (R3)
 
 static void handleNotFound() {
   netwatch::noteHttp();   // RECOVERY-CHANGE (0B)
@@ -815,6 +820,7 @@ void begin() {
   server.on("/reboot", HTTP_POST, []() { server.send(200, F("text/plain"), F("Restarting")); requestRestart(RR_USER); });
   server.on("/safemode", HTTP_POST, []() { server.send(200, F("text/plain"), F("Restarting into safe mode")); requestRestart(RR_SAFEMODE); });
   server.on("/reset_settings", HTTP_POST, handleResetSettings);
+  server.on("/reset_progress", HTTP_POST, handleResetProgress);   // RECOVERY-CHANGE (R3)
   server.onNotFound(handleNotFound);
   server.begin();
 

@@ -44,7 +44,7 @@ int main(int argc, char** argv) {
   gc_set_option(GC_OPT_SLEEP_MODE, 1);
   gc_set_date(2026, 11, 16, 1, 0);
   gc_set_status(0, "IP 192.168.1.42");
-  gc_set_status(3, "FW r2");
+  gc_set_status(3, "FW r3");
   gc_set_live_weather(GQ_W_CLEAR, 235, 0);
   gc_set_clock(9, 5, 1);
   run(1000); shot(dir, "start");     // a new game: one old server, a small number

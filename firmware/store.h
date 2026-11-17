@@ -22,6 +22,9 @@ const GqSettings* savedSettings();
 const GqConf* savedConf();
 const uint8_t* savedGame();                    // GC_SAVE_BYTES bytes
 
+// RECOVERY-CHANGE (R3): the owner reset the game: trust the game again (even after crashes) and write the fresh game within a second.
+void gameReset();
+
 bool active();                                 // saving is on (not safe mode, flash verified)
 
 // Status text for the status page ("Saved to flash 12 min ago (record 40)."), empty when there is nothing to say.

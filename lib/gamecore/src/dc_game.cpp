@@ -119,11 +119,8 @@ static void build_hall(void) {
     for (int x = 2; x <= 12; x++) if (x != 7) g_ground[y][x] = T_VENT;
   door(2, 2, T_DOOR); door(7, 2, T_DOOR); door(12, 2, T_STAIRS);
   door(4, 13, T_DOOR); door(7, 13, T_DOOR); door(10, 13, T_DOOR);
-  for (int i = 0; i < DC_RACKS; i++) {
-    int r = i / 10, open = 1;
-    if (r > 0) for (int k = (r - 1) * 10; k < r * 10; k++) if (!(D.s.rack[k] & RK_TIER)) open = 0;
-    if ((D.s.rack[i] & RK_TIER) || open) put(dc_rack_x(i), dc_rack_y(i), rack_tile(D.s.rack[i]));
-  }
+  for (int i = 0; i < DC_RACKS; i++)
+    if ((D.s.rack[i] & RK_TIER) || i < D.s.slots) put(dc_rack_x(i), dc_rack_y(i), rack_tile(D.s.rack[i]));
   put(0, 12, T_CHARGER); put(14, 12, T_CHARGER);
 }
 
@@ -686,8 +683,19 @@ static void job_mission(uint32_t dt) {
 static int crate_spot_x(int i) { return CRATE_SPOT[i & 7][0]; }
 static int crate_spot_y(int i) { return CRATE_SPOT[i & 7][1] + 1; }
 
+// The hall is built a few frames at a time: when the last empty frame is taken, 1 to 3 new ones appear.
+static void slots_grow(void) {
+  if (D.s.slots > DC_RACKS) D.s.slots = DC_RACKS;
+  for (int i = 0; i < DC_RACKS; i++) if ((D.s.rack[i] & RK_TIER) && i >= D.s.slots) D.s.slots = (uint8_t)(i + 1);
+  if (D.s.slots >= DC_RACKS) return;
+  for (int i = 0; i < D.s.slots; i++) if (!(D.s.rack[i] & RK_TIER)) return;       // an empty frame is still waiting
+  int n = D.s.slots + 1 + (int)(gc_rnd() % 3u);
+  D.s.slots = (uint8_t)(n > DC_RACKS ? DC_RACKS : n);
+  rebuild(A_HALL);
+}
+
 static int next_install_slot(void) {
-  for (int i = 0; i < DC_RACKS; i++) if (!(D.s.rack[i] & RK_TIER)) return i;
+  for (int i = 0; i < DC_RACKS && i < D.s.slots; i++) if (!(D.s.rack[i] & RK_TIER)) return i;
   for (int t = 1; t <= 2; t++)
     for (int i = 0; i < DC_RACKS; i++) if ((D.s.rack[i] & RK_TIER) == t) return i;
   return -1;
@@ -727,7 +735,7 @@ static void job_install(uint32_t dt) {
       D.hitem = -1;
       if (D.s.installs < 65535) D.s.installs++;
       if (slot < 0) { if (D.s.boost < 250) D.s.boost++; D.ph = 9; }
-      else if (!(D.s.rack[slot] & RK_TIER)) { D.s.rack[slot] = 1; D.ph = 4; }
+      else if (!(D.s.rack[slot] & RK_TIER)) { D.s.rack[slot] = 1; slots_grow(); D.ph = 4; }
       else { D.s.rack[slot] = (uint8_t)(D.s.rack[slot] + 1); D.ph = 9; }
       rebuild(A_HALL); touch();
       return;
@@ -1100,6 +1108,7 @@ static void defaults(DcSave* s) {
   s->rng = 0x1234567u;
   s->day = 1; s->minute = 9 * 60;
   s->rack[0] = 1 | RK_DONE;     // one old server runs: the number starts small until he builds the second
+  s->slots = 2;                 // and one empty frame waits for it
   s->crates_srv = 1;            // the second one waits on the dock
   for (int i = 0; i < 4; i++) s->panel[i] = PN_OK;
   s->m_day = 0;
@@ -1138,6 +1147,7 @@ static void start_scene(void) {
   D.live_wx1 = wx1; D.live_flags = wf; D.clock_approx = ap; D.month = mo; D.mday = md; D.wday = wd;
   D.live_temp10 = t10; D.year = yr;
   D.hhp = 3; D.hitem = -1; D.hemote = -1; D.wire_slot = -1;
+  slots_grow();
   D.area = A_OFFICE;
   crew_update();
   build_map();
@@ -1399,6 +1409,7 @@ extern "C" int32_t gc_query(int key) {
     case GQ_Q_SLEEP_MODE: return D.sleep_mode;
     case GQ_Q_PHASE: return D.ph;
     case GQ_Q_ABORTS: return D.aborts;
+    case GQ_Q_EMPTY_FRAMES: { int n = 0; for (int i = 0; i < DC_RACKS && i < D.s.slots; i++) if (!(D.s.rack[i] & RK_TIER)) n++; return n; }
     default: return 0;
   }
 }
@@ -1414,6 +1425,7 @@ extern "C" void gc_debug(int cmd, int32_t arg) {
         int s = next_install_slot();
         if (s < 0) { if (D.s.boost < 250) D.s.boost++; continue; }
         D.s.rack[s] = (uint8_t)(((D.s.rack[s] & RK_TIER) + 1) | RK_DONE);
+        slots_grow();
       }
       crew_update(); rebuild(A_HALL); rebuild(A_WATER); touch();
       break;

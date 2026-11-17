@@ -28,6 +28,8 @@ static uint32_t s_loopMax = 0, s_loopMaxT = 0, s_loopMaxShown = 0;
 static uint16_t s_fps10 = 0;
 
 static bool heroAsleep() { return gc_query(GQ_Q_HERO_ACT) == GQ_ACT_SLEEP; }
+// RECOVERY-CHANGE (R3): the owner's "Reset game progress" button: a new game from day 1, saved at once; settings untouched.
+static void resetProgress() { gc_reset_game(); store::gameReset(); }
 
 static void updateStatus() {
   char buf[32];
@@ -77,6 +79,7 @@ void setup() {
   store::begin(safety::safeMode());      // RECOVERY-CHANGE (R5): newest saved record from flash (read only)
   prefs::begin();                        // settings from RTC memory, else the saved record, else defaults
   safety::setAsleepFn(heroAsleep);
+  safety::setResetGameFn(resetProgress);   // RECOVERY-CHANGE (R3)
   config::begin(safety::safeMode());     // RECOVERY-CHANGE (R3-0F): settings record and page; no routes in safe mode
   wxnet::begin(safety::safeMode());      // weather client; never runs in safe mode
 

@@ -29,7 +29,7 @@ static GqSettings s_lastSet;
 static GqConf s_lastConf;
 static uint8_t s_burst = 0;
 static uint32_t s_burstT = 0;
-static bool s_wrote = false;
+static bool s_wrote = false, s_force = false;
 
 static uint32_t slotAddr(uint32_t i) { return BASE + (i / SL_SLOTS_PER_SECTOR) * SL_SECTOR_BYTES + (i % SL_SLOTS_PER_SECTOR) * SL_SLOT_BYTES; }
 
@@ -123,13 +123,17 @@ void loop() {
   const bool setDirty = memcmp(&prefs::settings(), &s_lastSet, sizeof(GqSettings)) != 0 || memcmp(&config::get(), &s_lastConf, sizeof(GqConf)) != 0;
   const bool gameDirty = !s_gameQ && gc_save_serial() != s_serial;
   const bool newDay = !s_gameQ && (uint16_t)gc_query(GQ_Q_DAY) != s_day;
-  if ((setDirty && since >= SETTINGS_WAIT_MS) || (newDay && since >= DAY_WAIT_MS) || (gameDirty && since >= GAME_EVERY_MS)) {
+  if ((s_force && since >= 1000) || (setDirty && since >= SETTINGS_WAIT_MS) || (newDay && since >= DAY_WAIT_MS) || (gameDirty && since >= GAME_EVERY_MS)) {
     s_burst++;
+    s_force = false;
     save(true);
   }
 }
 
 bool active() { return s_on; }
+
+// RECOVERY-CHANGE (R3): same ring, same sectors, same save(): nothing new is written anywhere else.
+void gameReset() { s_gameQ = false; s_force = true; }
 
 void statusLine(char* buf, size_t n) {
   if (!n) return;

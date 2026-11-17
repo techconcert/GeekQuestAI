@@ -14,7 +14,7 @@ GeekQuestAI is the modern-day sister of [GeekQuest](https://github.com/techconce
 its engine: the same recovery and update pages, WiFi setup, live weather, sleep schedule and flash saving.
 
 **Download:** every build of the `main` branch is published on the
-[Releases page](https://github.com/techconcert/GeekQuestAI/releases), named by number (**GeekQuestAI r1**, ...;
+[Releases page](https://github.com/techconcert/GeekQuestAI/releases), named by number (**GeekQuestAI r1**, **r2**, ...;
 the number lives in the `VERSION` file). Each release has the two firmware files, `preview.html` (the game
 in your browser) and `SHA256SUMS.txt`. Flash `SDP_GeekQuestAI_quest_*.bin` on the clock's update page
 (`http://<clock IP>/update`). Coming from GeekQuest or the stock firmware, the first install is by hand.
@@ -48,6 +48,8 @@ Screenshots from the game core the clock runs, one per room.
 - **Building.** One or two trucks a day bring crates. A server crate becomes a new rack (or, once the
   hall of 30 racks is full, a GPU and then a liquid-cooling upgrade, then overclocking). A rack counts
   only when it is racked, wired to the network room door and patched. Solar crates become roof panels.
+- **The hall grows a little at a time.** There are never more than three empty rack frames waiting: when
+  the last empty frame is taken, one to three new ones appear (random), up to 30.
 - **The hardware store.** Between jobs, from 08:00 to 19:00, he walks to the store off the server hall
   and buys cables, racks, servers, chips or a solar panel (it is all free). The goods go to the dock to be
   racked, the cables to the network room. Early on, when no server is waiting, he goes shopping for the
@@ -129,7 +131,10 @@ install**. The clock itself never talks to GitHub. The same checks run on the fi
 - **Save settings** and **Reset these settings** on this page touch only this page's settings.
 
 The status page has a **Game settings** section (info card interval, quiet at night) with its own
-Apply and **Reset game settings** buttons, which touch only those two settings.
+Apply and **Reset game settings** buttons, which touch only those two settings. Next to it,
+**Reset game progress** (with a confirmation) starts the game over from day 1 with the small starting
+state; it never touches WiFi, weather, sleep or any other setting, and the fresh game is saved to the
+flash within a second, so a power cut right afterwards does not bring the old game back.
 
 **Settings and the game survive a power cut** (R5): see "Saving to flash" below.
 

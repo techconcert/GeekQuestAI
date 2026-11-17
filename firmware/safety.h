@@ -87,6 +87,8 @@ void noteConnected();
 void setHealth(uint16_t fps_x10, uint32_t loopMaxMs);
 // main.cpp: hero is asleep (used by the maintenance restart when there is no clock).
 void setAsleepFn(bool (*fn)());
+// RECOVERY-CHANGE (R3): main.cpp: what the "Reset game progress" button does (restart the game from day 1 and save it now; settings untouched).
+void setResetGameFn(void (*fn)());
 // Short text of the last restart reasons for the status page and /info.
 const char* restartName(uint8_t reason);
 

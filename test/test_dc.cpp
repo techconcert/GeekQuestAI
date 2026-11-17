@@ -29,6 +29,7 @@ static void test_soak() {
   sim_start(11, 8 * 60);
   gc_set_date(2026, 11, 16, 1, 0);
   gc_set_status(0, "IP 192.168.100.200");
+  int max_empty = 0, saw1 = 0, saw3 = 0;
   int last_tlops = q(GQ_Q_TLOPS), seen_act[GQ_ACT_COUNT] = {0}, seen_area[GQ_AREA_COUNT] = {0};
   CHECK(last_tlops > 0);
   for (int d = 0; d < 45; d++) {
@@ -39,6 +40,7 @@ static void test_soak() {
       seen_act[q(GQ_Q_HERO_ACT)]++;
       seen_area[q(GQ_Q_HERO_AREA)]++;
       check_texts();
+      { int e = q(GQ_Q_EMPTY_FRAMES); CHECK(e >= 0 && e <= 3); max_empty = e > max_empty ? e : max_empty; if (e == 3) saw3 = 1; if (e == 1) saw1 = 1; }
       int tile = q(GQ_Q_HERO_TILE);
       CHECK(tile >= GC_COLS && tile < 14 * GC_COLS);
       if (gqt::wall_min == 3 * 60) CHECK(q(GQ_Q_HERO_ABED) == 1);       // asleep on the cot at 03:00
@@ -48,6 +50,7 @@ static void test_soak() {
     CHECK(q(GQ_Q_ABORTS) == 0);
     CHECK(q(GQ_Q_CRATES) <= 8);
   }
+  CHECK(saw1 && saw3 && max_empty <= 3);       // never more than 3 empty frames at a time
   std::printf("soak: racks %d panels %d tlops %d installs %d fights %d missions %d\n", q(GQ_Q_RACKS), q(GQ_Q_PANELS),
               q(GQ_Q_TLOPS), q(GQ_Q_INSTALLS), q(GQ_Q_FIGHTS), q(GQ_Q_MISSIONS));
   CHECK(q(GQ_Q_RACKS) == DC_RACKS);                 // the hall is full after six weeks
