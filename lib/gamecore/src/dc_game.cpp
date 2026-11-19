@@ -7,7 +7,7 @@ DcState D;
 
 #define STEP_MS       22        // ms per pixel the technician walks
 #define SAVE_MAGIC    0x49415147u   // "GQAI"
-#define SAVE_VERSION  1
+#define SAVE_VERSION  2         // r4: a new layout (floors, farm screens, towers, cleaners); older records are refused
 
 // ------------------------------------------------------------------ small helpers
 static uint32_t hash32(uint32_t x) {
@@ -26,22 +26,34 @@ static uint32_t crc32_calc(const uint8_t* p, int n) {
   return ~c;
 }
 
-int dc_rack_x(int slot) { int c = slot % 10; return 2 + c + (c >= 5 ? 1 : 0); }
-int dc_rack_y(int slot) { return 4 + (slot / 10) * 3; }
-int dc_panel_x(int slot) { int c = slot % 6; return 1 + c + (c >= 3 ? 1 : 0); }
-int dc_panel_y(int slot) { return 4 + (slot / 6) * 2; }
+uint8_t g_rack[DC_ALL_RACKS];
+uint8_t g_panel[DC_ALL_PANELS];
+
+// Racks and panels use the same layout on every floor and every farm screen: 3 rows of 10, aisle in column 7.
+int dc_rack_x(int slot) { int c = (slot % DC_RACKS) % 10; return 2 + c + (c >= 5 ? 1 : 0); }
+int dc_rack_y(int slot) { return 4 + ((slot % DC_RACKS) / 10) * 3; }
+int dc_panel_x(int slot) { return dc_rack_x(slot); }
+int dc_panel_y(int slot) { return dc_rack_y(slot); }
 
 int dc_racks_done(void) {
   int n = 0;
-  for (int i = 0; i < DC_RACKS; i++) if ((D.s.rack[i] & RK_TIER) && (D.s.rack[i] & RK_DONE) == RK_DONE) n++;
+  for (int i = 0; i < DC_ALL_RACKS; i++) if ((g_rack[i] & RK_TIER) && (g_rack[i] & RK_DONE) == RK_DONE) n++;
   return n;
 }
 
 static int panels_total(void) {
   int n = 0;
-  for (int i = 0; i < DC_PANELS; i++) if (D.s.panel[i]) n++;
+  for (int i = 0; i < DC_ALL_PANELS; i++) if (g_panel[i]) n++;
   return n;
 }
+
+int dc_racks_total(void) {
+  int n = 0;
+  for (int i = 0; i < DC_ALL_RACKS; i++) if (g_rack[i] & RK_TIER) n++;
+  return n;
+}
+
+int dc_resources_bad(void) { return D.pw_pct < 100 || D.cl_pct < 100; }
 
 int dc_wx(void) { return (int)D.live_wx1 - 1; }
 
@@ -65,17 +77,38 @@ int dc_alarm(void) {
   return 0;
 }
 
+// Power and cooling. Every online rack asks for power and cooling by tier; panels give power (a dirty one half, a cracked
+// one none, cleaner robots add a little), cooling towers give cooling (the pump failing leaves a quarter). The output is
+// scaled by whichever of the two falls shorter.
+static const uint8_t TIER_NEED[4] = {0, 1, 2, 4};
+#define PANEL_POWER   4
+#define CLEANER_POWER 3
+#define TOWER_COOL    70
+
+static void res_calc(void) {
+  uint32_t dem = 0, sup = 0;
+  for (int i = 0; i < DC_ALL_RACKS; i++) if ((g_rack[i] & RK_DONE) == RK_DONE) dem += TIER_NEED[g_rack[i] & RK_TIER];
+  for (int i = 0; i < DC_ALL_PANELS; i++) sup += g_panel[i] == PN_OK ? PANEL_POWER : (g_panel[i] == PN_DIRTY ? PANEL_POWER / 2 : 0);
+  if (sup) sup += (uint32_t)D.s.cleaners * CLEANER_POWER;
+  uint32_t cool = (uint32_t)D.s.towers * TOWER_COOL;
+  if (D.s.water_down) cool /= 4;
+  uint32_t pw = dem ? sup * 100u / dem : 999u, cl = dem ? cool * 100u / dem : 999u;
+  D.pw_pct = (uint16_t)(pw > 999 ? 999 : pw);
+  D.cl_pct = (uint16_t)(cl > 999 ? 999 : cl);
+}
+
 // Output in T (tera). Racks count once they are wired and patched.
 static uint32_t tlops_now(void) {
   static const uint16_t TIER[4] = {0, 6, 250, 3000};
   uint32_t base = 0;
   if (D.blip) return 0;
-  for (int i = 0; i < DC_RACKS; i++)
-    if ((D.s.rack[i] & RK_DONE) == RK_DONE) base += TIER[D.s.rack[i] & RK_TIER];
+  for (int i = 0; i < DC_ALL_RACKS; i++)
+    if ((g_rack[i] & RK_DONE) == RK_DONE) base += TIER[g_rack[i] & RK_TIER];
+  res_calc();
   uint32_t pct = 100u + D.s.fiber * 5u + D.s.boost * 3u;
-  for (int i = 0; i < DC_PANELS; i++) pct += D.s.panel[i] == PN_OK ? 2u : (D.s.panel[i] == PN_DIRTY ? 1u : 0u);
   uint32_t v = base * pct / 100u;
-  if (D.s.water_down) v /= 2;
+  uint32_t lim = D.pw_pct < D.cl_pct ? D.pw_pct : D.cl_pct;
+  if (lim < 100) v = v * lim / 100u;
   for (int i = 0; i < 4; i++) if (D.rb[i].on && D.rb[i].glitch) v -= v / 10;
   return v;
 }
@@ -111,16 +144,24 @@ static int rack_tile(int v) {
   return T[v & RK_TIER];
 }
 
+#define ELEV_X 4                 // the elevator door in the hall's back wall
+
 static void build_hall(void) {
   row(1, T_WALLTOP, 1); row(2, T_WALL, 1);
   rows(3, 12, T_FLOOR);
   row(13, T_WALLTOP, 1);
   for (int y = 5; y <= 11; y += 3)
     for (int x = 2; x <= 12; x++) if (x != 7) g_ground[y][x] = T_VENT;
-  door(2, 2, T_DOOR); door(7, 2, T_DOOR); door(12, 2, T_STAIRS);
-  door(4, 13, T_DOOR); door(7, 13, T_DOOR); door(10, 13, T_DOOR);
-  for (int i = 0; i < DC_RACKS; i++)
-    if ((D.s.rack[i] & RK_TIER) || i < D.s.slots) put(dc_rack_x(i), dc_rack_y(i), rack_tile(D.s.rack[i]));
+  if (!D.floor) {                                       // the other rooms are all reached from the ground floor
+    door(2, 2, T_DOOR); door(7, 2, T_DOOR); door(12, 2, T_DOOR);
+    door(4, 13, T_DOOR); door(7, 13, T_DOOR); door(10, 13, T_DOOR);
+  }
+  door(ELEV_X, 2, T_ELEVATOR);
+  g_obj[2][ELEV_X + 1] = (uint8_t)(T_FLOOR_1 + D.floor);
+  for (int i = 0; i < DC_RACKS; i++) {
+    int gi = D.floor * DC_RACKS + i;
+    if ((g_rack[gi] & RK_TIER) || gi < D.s.slots) put(dc_rack_x(i), dc_rack_y(i), rack_tile(g_rack[gi]));
+  }
   put(0, 12, T_CHARGER); put(14, 12, T_CHARGER);
 }
 
@@ -144,9 +185,9 @@ static void build_dock(void) {
   for (int x = 8; x <= 11; x++) g_ground[2][x] = T_SHUTTER;
   door(4, 2, T_DOOR);
   put(1, 7, T_PALLET); put(2, 7, T_PALLET); put(13, 7, T_CONE); put(13, 4, T_BARREL);
-  int n = D.s.crates_srv + D.s.crates_pan;
+  int n = D.s.crates_srv + D.s.crates_pan + D.s.crates_tow;
   for (int i = 0; i < n && i < 8; i++)
-    put(CRATE_SPOT[i][0], CRATE_SPOT[i][1], i < D.s.crates_srv ? T_CRATE : T_CRATE_PANEL);
+    put(CRATE_SPOT[i][0], CRATE_SPOT[i][1], i < D.s.crates_srv ? T_CRATE : (i < D.s.crates_srv + D.s.crates_pan ? T_CRATE_PANEL : T_CRATE_TOWER));
   if (D.truck == 2)
     for (int y = 9; y <= 10; y++) for (int x = 8; x <= 10; x++) set_solid(x, y, 1);
 }
@@ -157,31 +198,36 @@ static void build_water(void) {
   for (int y = 9; y <= 12; y++) row(y, T_WATER_A, 1);
   row(13, T_WALLTOP, 1);
   door(10, 2, T_DOOR);
-  int towers = 1 + dc_racks_done() / 8;
-  if (towers > 4) towers = 4;
-  for (int i = 0; i < towers; i++) { put(1 + i * 2, 3, T_TOWER_TOP_A); put(1 + i * 2, 4, T_TOWER_BOT); }
+  for (int i = 0; i < D.s.towers && i < DC_TOWERS; i++) { put(1 + i * 2, 3, T_TOWER_TOP_A); put(1 + i * 2, 4, T_TOWER_BOT); }
   for (int x = 1; x <= 11; x++) put(x, 6, (x == 4 || x == 8) ? (D.s.water_down ? T_VALVE : T_VALVE_OK) : T_PIPE_H);
   put(12, 6, D.s.water_down ? T_PUMP_BAD : T_PUMP_OK);
   put(12, 7, T_PIPE_V); put(12, 8, T_PIPE_V);
   put(14, 4, T_BARREL);
 }
 
+static int farm_screens(void) { int n = (D.s.pslots + DC_PANELS - 1) / DC_PANELS; return n < 1 ? 1 : n; }
+
 static int panel_tile(int v) {
   static const uint8_t T[4] = {T_MOUNT, T_SOLAR_OK, T_SOLAR_DIRTY, T_SOLAR_CRACK};
   return T[v & 3];
 }
 
+// The solar farm: open ground behind a fence, 30 panels a screen, gates to the next screens on the sides.
 static void build_roof(void) {
   row(1, T_SKY, 1); row(2, T_SKY, 1);
-  for (int x = 0; x < GC_COLS; x++) g_obj[2][x] = T_PARAPET;
-  rows(3, 13, T_GRAVEL);
-  door(12, 13, T_STAIRS);
+  for (int x = 0; x < GC_COLS; x++) g_obj[2][x] = T_FENCE;
+  rows(3, 12, T_GRASS);
+  row(13, T_GRASS, 1);
+  for (int x = 0; x < GC_COLS; x++) g_obj[13][x] = T_FENCE;
+  for (int y = 3; y <= 12; y++) { put(0, y, T_FENCE); put(14, y, T_FENCE); }
+  door(12, 13, T_GATE);
+  if (D.fscr > 0) door(0, 8, T_GATE);
+  if (D.fscr + 1 < farm_screens()) door(14, 8, T_GATE);
   for (int i = 0; i < DC_PANELS; i++) {
-    int r = i / 6, open = 1;
-    if (r > 0) for (int k = (r - 1) * 6; k < r * 6; k++) if (!D.s.panel[k]) open = 0;
-    if (D.s.panel[i] || open) put(dc_panel_x(i), dc_panel_y(i), panel_tile(D.s.panel[i]));
+    int gi = D.fscr * DC_PANELS + i;
+    if (g_panel[gi] || gi < D.s.pslots) put(dc_panel_x(i), dc_panel_y(i), panel_tile(g_panel[gi]));
   }
-  put(10, 4, T_INVERTER); put(13, 4, T_AC); put(11, 8, T_AC); put(12, 8, T_AC);
+  put(13, 12, T_INVERTER); put(1, 12, T_AC);
 }
 
 static void build_store(void) {
@@ -362,6 +408,8 @@ static void enter_area(int area, int tx, int ty) {
 }
 
 // Door tile in the hall that leads to an area, and the area's own door tile.
+static uint8_t s_wfloor, s_wscr;      // the hall floor / farm screen the walk is heading for (0 unless set by hall_go / farm_go)
+
 static const uint8_t HALL_DOOR[A_COUNT][2] = {{7, 3}, {7, 2}, {4, 13}, {10, 13}, {12, 2}, {2, 2}, {7, 13}, {7, 3}};
 static const uint8_t AREA_DOOR[A_COUNT][2] = {{7, 3}, {7, 13}, {4, 2}, {10, 2}, {12, 13}, {2, 13}, {7, 2}, {7, 3}};
 
@@ -399,6 +447,16 @@ static int walk_to(int tx, int ty, uint32_t dt) {
 static int go(int area, int tx, int ty, uint32_t dt) {
   if (D.curtain) return 0;
   D.hpose = POSE_STAND;
+  const int wf = area == A_HALL ? s_wfloor : 0, ws = area == A_ROOF ? s_wscr : 0;
+  if (D.area == A_HALL && D.floor != wf) {                        // the elevator
+    if (walk_to(ELEV_X, 3, dt)) { D.floor = (uint8_t)wf; enter_area(A_HALL, ELEV_X, 3); }
+    return 0;
+  }
+  if (D.area == A_ROOF && D.fscr != ws) {                         // the gate to the next farm screen
+    const int right = ws > D.fscr;
+    if (walk_to(right ? 13 : 1, 8, dt)) { D.fscr = (uint8_t)(D.fscr + (right ? 1 : -1)); enter_area(A_ROOF, right ? 1 : 13, 8); }
+    return 0;
+  }
   if (D.area == area) return walk_to(tx, ty, dt);
   if (D.area == A_MISSION) { enter_area(A_HALL, 7, 3); return 0; }     // never happens in normal play
   if (D.area == A_HALL) {
@@ -409,6 +467,11 @@ static int go(int area, int tx, int ty, uint32_t dt) {
   }
   return 0;
 }
+
+// Rack `slot` (any floor) / panel `slot` (any farm screen): ride the elevator or cross the gates first.
+static int hall_go(int slot, int tx, int ty, uint32_t dt) { s_wfloor = (uint8_t)(slot / DC_RACKS); int r = go(A_HALL, tx, ty, dt); s_wfloor = 0; return r; }
+static int farm_scr_go(int scr, int tx, int ty, uint32_t dt) { s_wscr = (uint8_t)scr; int r = go(A_ROOF, tx, ty, dt); s_wscr = 0; return r; }
+static int farm_go(int slot, int tx, int ty, uint32_t dt) { return farm_scr_go(slot / DC_PANELS, tx, ty, dt); }
 
 static void job_done(void) {
   D.job = GQ_ACT_NONE; D.ph = 0; D.t = 0; D.job_ms = 0; D.stun = 0;
@@ -444,15 +507,29 @@ static int delivery_minute(int k) { return (k == 0 ? 9 * 60 : 13 * 60) + (int)(d
 static int mission_minute(void) { return 9 * 60 + 30 + (int)(day_hash(5) % 390); }
 static int event_minute(void) { return 10 * 60 + (int)(day_hash(6) % 420); }
 
+// What the data center needs next: 0 a server, 1 solar panels, 2 a cooling tower. Whichever resource is shorter comes first.
+static int panel_room(void) { return panels_total() + D.s.crates_pan + D.load_pan < DC_ALL_PANELS; }
+static int tower_room(void) { return D.s.towers + D.s.crates_tow + D.load_tow < DC_TOWERS; }
+
+static int need_kind(void) {
+  const int pw = D.pw_pct, cl = D.cl_pct, can_p = panel_room(), can_t = tower_room();
+  if (can_p && pw < 130 && (pw <= cl || !can_t)) return 1;
+  if (can_t && cl < 130) return 2;
+  if (can_p && pw < 130) return 1;
+  return 0;
+}
+
 static void truck_arrive(void) {
   uint32_t h = day_hash(10 + D.s.deliv_done);
-  int n = 1 + (D.s.day <= 7 ? (int)(h & 1) : 0);     // crates on this truck
-  D.load_srv = D.load_pan = 0;
+  int n = 1 + (int)(h & 1) + dc_racks_total() / 40;     // crates on this truck: a bigger data center gets bigger deliveries
+  if (n > 4) n = 4;
+  D.load_srv = D.load_pan = D.load_tow = 0;
+  (void)h;
   for (int i = 0; i < n; i++) {
-    int pan = ((h >> (2 + i * 2)) & 3) == 0 && panels_total() + D.s.crates_pan + D.load_pan < DC_PANELS;
-    if (pan) D.load_pan++; else D.load_srv++;
+    int k = need_kind();
+    if (k == 1) D.load_pan++; else if (k == 2) D.load_tow++; else D.load_srv++;
   }
-  if (D.s.crates_srv + D.s.crates_pan + n > 8) { D.load_srv = D.load_pan = 0; return; }   // the dock is full
+  if (D.s.crates_srv + D.s.crates_pan + D.s.crates_tow + n > 8) { D.load_srv = D.load_pan = D.load_tow = 0; return; }   // the dock is full
   D.truck = 1; D.truck_x = 250; D.truck_acc = 0;
   if (D.s.deliv_done < 255) D.s.deliv_done++;
   rebuild(A_DOCK);
@@ -462,11 +539,11 @@ static void wear_panels(void) {
   int wx = dc_wx();
   int dirt = wx == GQ_W_STORM ? 25 : ((wx == GQ_W_WINDY || wx == GQ_W_SNOW) ? 20 : 8);
   int crack = wx == GQ_W_STORM ? 10 : 1;
-  for (int i = 0; i < DC_PANELS; i++) {
-    if (D.s.panel[i] != PN_OK) continue;
+  for (int i = 0; i < DC_ALL_PANELS; i++) {
+    if (g_panel[i] != PN_OK) continue;
     uint32_t r = gc_rnd();
-    if ((int)(r % 100) < crack) D.s.panel[i] = PN_CRACKED;
-    else if ((int)((r >> 8) % 100) < dirt) D.s.panel[i] = PN_DIRTY;
+    if ((int)(r % 100) < crack) g_panel[i] = PN_CRACKED;
+    else if ((int)((r >> 8) % 100) < dirt) g_panel[i] = PN_DIRTY;
   }
   rebuild(A_ROOF);
 }
@@ -495,9 +572,20 @@ static void crew_update(void) {
   }
 }
 
+static int first_panel(int state_a, int state_b);
+
 static void on_minute(void) {
   if (D.job == GQ_ACT_MISSION && D.area == A_MISSION && D.s.m_min < 255) D.s.m_min++;
   crew_update();
+  if (D.s.cleaners && D.s.minute % 6 == 0) {                 // the cleaner robots wipe one dirty panel each, every 6 minutes
+    int any = 0;
+    for (int k = 0; k < D.s.cleaners; k++) {
+      int i = first_panel(PN_DIRTY, PN_DIRTY);
+      if (i < 0 || (D.job == GQ_ACT_CLEAN && D.arg == i)) break;
+      g_panel[i] = PN_OK; any = 1;
+    }
+    if (any) { rebuild(A_ROOF); touch(); }
+  }
   if (dc_asleep() || sleep_due()) return;
   int m = D.s.minute;
   if (!D.truck && D.s.deliv_done < deliveries_today() && m >= delivery_minute(D.s.deliv_done) && m < 19 * 60)
@@ -586,12 +674,14 @@ static void mission_leave(void) {
   int area, x, y;
   mission_gate(D.s.m_type ? (int)D.s.m_type : (int)GQ_MIS_ROBOTS, &area, &x, &y);
   robot_clear(4); robot_clear(5);
+  D.floor = 0; D.fscr = 0;
   enter_area(area, x, y);
 }
 
 static int pick_mission(void) {
   int cracked = 0, empty = 0;
-  for (int i = 0; i < DC_PANELS; i++) { if (D.s.panel[i] == PN_CRACKED) cracked++; if (!D.s.panel[i]) empty++; }
+  for (int i = 0; i < DC_ALL_PANELS; i++) { if (g_panel[i] == PN_CRACKED) cracked++; }
+  empty = panel_room();
   if (D.s.water_down) return GQ_MIS_COOLING;
   if (cracked >= 2 || dc_wx() == GQ_W_STORM) return GQ_MIS_STORM;
   switch (day_hash(8) & 3) {
@@ -600,6 +690,22 @@ static int pick_mission(void) {
     case 2: return GQ_MIS_FIBER;
     default: return D.rb[0].on ? GQ_MIS_ROBOTS : GQ_MIS_FIBER;
   }
+}
+
+// The farm is built a few frames at a time as well.
+static void pslots_grow(void) {
+  if (D.s.pslots > DC_ALL_PANELS) D.s.pslots = DC_ALL_PANELS;
+  for (int i = 0; i < DC_ALL_PANELS; i++) if (g_panel[i] && i >= D.s.pslots) D.s.pslots = (uint8_t)(i + 1);
+  if (D.s.pslots >= DC_ALL_PANELS) return;
+  for (int i = 0; i < D.s.pslots; i++) if (!g_panel[i]) return;
+  int n = D.s.pslots + 1 + (int)(gc_rnd() % 3u);
+  D.s.pslots = (uint8_t)(n > DC_ALL_PANELS ? DC_ALL_PANELS : n);
+  rebuild(A_ROOF);
+}
+
+static int next_panel_slot(void) {
+  for (int i = 0; i < DC_ALL_PANELS && i < D.s.pslots; i++) if (!g_panel[i]) return i;
+  return -1;
 }
 
 static void mission_begin(int type, uint32_t seed) {
@@ -616,10 +722,11 @@ static void mission_finish(void) {
   switch (D.s.m_type) {
     case GQ_MIS_COOLING: D.s.water_down = 0; break;
     case GQ_MIS_SOLAR:
-      for (int i = 0, n = 0; i < DC_PANELS && n < 3; i++) if (!D.s.panel[i]) { D.s.panel[i] = PN_OK; n++; }
+      for (int n = 0; n < 3; n++) { int i = next_panel_slot(); if (i < 0) break; g_panel[i] = PN_OK; pslots_grow(); }
+      rebuild(A_ROOF);
       break;
     case GQ_MIS_STORM:
-      for (int i = 0; i < DC_PANELS; i++) if (D.s.panel[i]) D.s.panel[i] = PN_OK;
+      for (int i = 0; i < DC_ALL_PANELS; i++) if (g_panel[i]) g_panel[i] = PN_OK;
       break;
     case GQ_MIS_FIBER: if (D.s.fiber < 20) D.s.fiber++; break;
     default:
@@ -685,19 +792,20 @@ static int crate_spot_y(int i) { return CRATE_SPOT[i & 7][1] + 1; }
 
 // The hall is built a few frames at a time: when the last empty frame is taken, 1 to 3 new ones appear.
 static void slots_grow(void) {
-  if (D.s.slots > DC_RACKS) D.s.slots = DC_RACKS;
-  for (int i = 0; i < DC_RACKS; i++) if ((D.s.rack[i] & RK_TIER) && i >= D.s.slots) D.s.slots = (uint8_t)(i + 1);
-  if (D.s.slots >= DC_RACKS) return;
-  for (int i = 0; i < D.s.slots; i++) if (!(D.s.rack[i] & RK_TIER)) return;       // an empty frame is still waiting
+  if (D.s.slots > DC_ALL_RACKS) D.s.slots = DC_ALL_RACKS;
+  for (int i = 0; i < DC_ALL_RACKS; i++) if ((g_rack[i] & RK_TIER) && i >= D.s.slots) D.s.slots = (uint8_t)(i + 1);
+  if (D.s.slots >= DC_ALL_RACKS) return;
+  for (int i = 0; i < D.s.slots; i++) if (!(g_rack[i] & RK_TIER)) return;       // an empty frame is still waiting
   int n = D.s.slots + 1 + (int)(gc_rnd() % 3u);
-  D.s.slots = (uint8_t)(n > DC_RACKS ? DC_RACKS : n);
+  D.s.slots = (uint8_t)(n > DC_ALL_RACKS ? DC_ALL_RACKS : n);
   rebuild(A_HALL);
 }
 
+// An empty frame first; when every built frame holds a server (and the building is full), the weakest rack is upgraded.
 static int next_install_slot(void) {
-  for (int i = 0; i < DC_RACKS && i < D.s.slots; i++) if (!(D.s.rack[i] & RK_TIER)) return i;
+  for (int i = 0; i < DC_ALL_RACKS && i < D.s.slots; i++) if (!(g_rack[i] & RK_TIER)) return i;
   for (int t = 1; t <= 2; t++)
-    for (int i = 0; i < DC_RACKS; i++) if ((D.s.rack[i] & RK_TIER) == t) return i;
+    for (int i = 0; i < DC_ALL_RACKS; i++) if ((g_rack[i] & RK_TIER) == t) return i;
   return -1;
 }
 
@@ -705,8 +813,8 @@ static void job_install(uint32_t dt) {
   int slot = D.arg;
   switch (D.ph) {
     case 0:
-      for (int i = 0; i < DC_RACKS; i++) {
-        int v = D.s.rack[i];
+      for (int i = 0; i < DC_ALL_RACKS; i++) {
+        int v = g_rack[i];
         if ((v & RK_TIER) && !(v & RK_WIRED)) { D.arg = (int16_t)i; D.ph = 4; return; }
         if ((v & RK_TIER) && !(v & RK_PATCHED)) { D.arg = (int16_t)i; D.ph = 7; return; }
       }
@@ -721,12 +829,12 @@ static void job_install(uint32_t dt) {
       if (D.s.crates_srv) D.s.crates_srv--;
       D.hitem = I_CARRY_CRATE;
       rebuild(A_DOCK); touch();
-      if (slot < 0) D.arg2 = (int16_t)(gc_rnd() % DC_RACKS);
+      if (slot < 0) D.arg2 = (int16_t)(gc_rnd() % DC_RACKS);   // everything is liquid cooled: he overclocks a rack on the ground floor
       D.ph = 2;
       return;
     case 2: {
       int at = slot >= 0 ? slot : D.arg2;
-      if (!go(A_HALL, dc_rack_x(at), dc_rack_y(at) + 1, dt)) return;
+      if (!hall_go(at, dc_rack_x(at), dc_rack_y(at) + 1, dt)) return;
       D.hdir = DIR_UP; D.hitem = I_CARRY_SERVER; D.ph = 3;
       return;
     }
@@ -735,22 +843,22 @@ static void job_install(uint32_t dt) {
       D.hitem = -1;
       if (D.s.installs < 65535) D.s.installs++;
       if (slot < 0) { if (D.s.boost < 250) D.s.boost++; D.ph = 9; }
-      else if (!(D.s.rack[slot] & RK_TIER)) { D.s.rack[slot] = 1; slots_grow(); D.ph = 4; }
-      else { D.s.rack[slot] = (uint8_t)(D.s.rack[slot] + 1); D.ph = 9; }
+      else if (!(g_rack[slot] & RK_TIER)) { g_rack[slot] = 1; slots_grow(); D.ph = 4; }
+      else { g_rack[slot] = (uint8_t)(g_rack[slot] + 1); D.ph = 9; }
       rebuild(A_HALL); touch();
       return;
     case 4:
-      if (!go(A_HALL, dc_rack_x(slot), dc_rack_y(slot) - 1, dt)) return;
+      if (!hall_go(slot, dc_rack_x(slot), dc_rack_y(slot) - 1, dt)) return;
       D.wire_slot = (int8_t)slot; D.wire_stage = 1; D.hitem = -1; D.ph = 5;
       return;
     case 5:
       D.hemote = I_SNIPS;
-      if (!go(A_HALL, 7, dc_rack_y(slot) - 1, dt)) return;
+      if (!hall_go(slot, 7, dc_rack_y(slot) - 1, dt)) return;
       D.wire_stage = 2; D.ph = 6;
       return;
     case 6:
-      if (!go(A_HALL, 7, 3, dt)) return;
-      D.s.rack[slot] |= RK_WIRED;
+      if (!hall_go(slot, 7, 3, dt)) return;
+      g_rack[slot] |= RK_WIRED;
       D.wire_slot = -1; D.wire_stage = 0; D.hemote = -1;
       touch(); gc_mark_all_dirty();
       D.ph = 7;
@@ -761,7 +869,7 @@ static void job_install(uint32_t dt) {
       return;
     case 8:
       if (!work(dt, 90000, I_SNIPS, POSE_WORK)) return;
-      D.s.rack[slot] |= RK_PATCHED;
+      g_rack[slot] |= RK_PATCHED;
       touch(); gc_mark_all_dirty();
       D.ph = 9;
       return;
@@ -772,20 +880,20 @@ static void job_install(uint32_t dt) {
 }
 
 static int first_panel(int state_a, int state_b) {
-  for (int i = 0; i < DC_PANELS; i++) if (D.s.panel[i] == state_a || D.s.panel[i] == state_b) return i;
+  for (int i = 0; i < DC_ALL_PANELS; i++) if (g_panel[i] && (g_panel[i] == state_a || g_panel[i] == state_b)) return i;
   return -1;
 }
 
 static void job_panel(uint32_t dt) {
   switch (D.ph) {
     case 0: {
-      D.arg = (int16_t)first_panel(PN_NONE, PN_NONE);
+      D.arg = (int16_t)next_panel_slot();
       if (D.arg < 0 || !D.s.crates_pan) { D.s.crates_pan = 0; rebuild(A_DOCK); job_done(); return; }
       D.ph = 1;
       return;
     }
     case 1: {
-      int i = D.s.crates_srv + D.s.crates_pan - 1;
+      int i = D.s.crates_srv + D.s.crates_pan - 1;      // the panel crates sit right after the server crates
       if (!go(A_DOCK, crate_spot_x(i), crate_spot_y(i), dt)) return;
       D.hdir = DIR_UP;
       if (!work(dt, 2500, I_BUBBLE, POSE_STAND)) return;
@@ -796,14 +904,48 @@ static void job_panel(uint32_t dt) {
       return;
     }
     case 2:
-      if (!go(A_ROOF, dc_panel_x(D.arg), dc_panel_y(D.arg) + 1, dt)) return;
+      if (!farm_go(D.arg, dc_panel_x(D.arg), dc_panel_y(D.arg) + 1, dt)) return;
       D.hdir = DIR_UP; D.ph = 3;
       return;
     case 3:
       if (!work(dt, 60000, I_WRENCH, POSE_WORK)) return;
       D.hitem = -1;
-      D.s.panel[D.arg] = PN_OK;
-      rebuild(A_ROOF); touch();
+      g_panel[D.arg] = PN_OK;
+      pslots_grow(); rebuild(A_ROOF); touch();
+      D.ph = 4;
+      return;
+    default:
+      if (work(dt, 2000, I_BUBBLE, POSE_CHEER)) job_done();
+      return;
+  }
+}
+
+static void job_tower(uint32_t dt) {
+  switch (D.ph) {
+    case 0:
+      if (!D.s.crates_tow || D.s.towers >= DC_TOWERS) { D.s.crates_tow = 0; rebuild(A_DOCK); job_done(); return; }
+      D.ph = 1;
+      return;
+    case 1: {
+      int i = D.s.crates_srv + D.s.crates_pan + D.s.crates_tow - 1;
+      if (!go(A_DOCK, crate_spot_x(i), crate_spot_y(i), dt)) return;
+      D.hdir = DIR_UP;
+      if (!work(dt, 2500, I_BUBBLE, POSE_STAND)) return;
+      if (D.s.crates_tow) D.s.crates_tow--;
+      D.hitem = I_CARRY_CRATE;
+      rebuild(A_DOCK); touch();
+      D.ph = 2;
+      return;
+    }
+    case 2:
+      if (!go(A_WATER, 1 + D.s.towers * 2, 5, dt)) return;
+      D.hdir = DIR_UP; D.ph = 3;
+      return;
+    case 3:
+      if (!work(dt, 60000, I_WRENCH, POSE_WORK)) return;
+      D.hitem = -1;
+      if (D.s.towers < DC_TOWERS) D.s.towers++;
+      rebuild(A_WATER); touch();
       D.ph = 4;
       return;
     default:
@@ -819,13 +961,13 @@ static void job_clean(uint32_t dt) {
     D.ph = 1;
   }
   if (D.ph == 1) {
-    if (!go(A_ROOF, dc_panel_x(D.arg), dc_panel_y(D.arg) + 1, dt)) return;
+    if (!farm_go(D.arg, dc_panel_x(D.arg), dc_panel_y(D.arg) + 1, dt)) return;
     D.hdir = DIR_UP; D.ph = 2;
     return;
   }
-  int cracked = D.s.panel[D.arg] == PN_CRACKED;
+  int cracked = g_panel[D.arg] == PN_CRACKED;
   if (!work(dt, cracked ? 60000 : 25000, cracked ? I_WRENCH : I_BROOM, POSE_WORK)) return;
-  D.s.panel[D.arg] = PN_OK;
+  g_panel[D.arg] = PN_OK;
   rebuild(A_ROOF); touch();
   D.arg2++; D.ph = 0;
 }
@@ -857,7 +999,8 @@ static void job_receive(uint32_t dt) {
   if (!work(dt, 8000, I_CLIPBOARD, POSE_STAND)) return;
   D.s.crates_srv = (uint8_t)(D.s.crates_srv + D.load_srv);
   D.s.crates_pan = (uint8_t)(D.s.crates_pan + D.load_pan);
-  D.load_srv = D.load_pan = 0;
+  D.s.crates_tow = (uint8_t)(D.s.crates_tow + D.load_tow);
+  D.load_srv = D.load_pan = D.load_tow = 0;
   D.truck = 3; D.truck_acc = 0;
   rebuild(A_DOCK); touch();
   job_done();
@@ -866,7 +1009,7 @@ static void job_receive(uint32_t dt) {
 static void job_rounds(uint32_t dt) {
   if (D.ph == 0) {
     int n = 0, pick = -1;
-    for (int i = 0; i < DC_RACKS; i++) if ((D.s.rack[i] & RK_DONE) == RK_DONE && gc_rnd() % (uint32_t)(++n) == 0) pick = i;
+    for (int i = 0; i < DC_RACKS; i++) if ((g_rack[i] & RK_DONE) == RK_DONE && gc_rnd() % (uint32_t)(++n) == 0) pick = i;
     if (pick < 0 || D.arg2 >= 3) { job_done(); return; }
     D.arg = (int16_t)pick; D.ph = 1;
   }
@@ -879,12 +1022,31 @@ static void job_rounds(uint32_t dt) {
   D.arg2++; D.ph = 0;
 }
 
-// A trip to the hardware store (open 08:00 to 19:00, everything is free). arg: 0 server, 1 rack kit, 2 chips, 3 cables, 4 solar panel.
+// A trip to the hardware store (open 08:00 to 19:00, everything is free). arg: 0 server, 1 rack kit, 2 chips, 3 cables,
+// 4 solar panel, 5 cooling tower kit, 6 panel cleaner robot.
 static int store_open(void) { int m = D.s.minute; return m >= 8 * 60 && m < 19 * 60; }
 
+#define SHOP_KINDS 7
+
+static int cleaner_room(void) { return D.s.cleaners < DC_CLEANERS_PER_SCREEN * farm_screens() && D.s.cleaners < 255; }
+
+// What to fetch on a trip: what the data center is short of first, otherwise a server, cables or a cleaner robot.
+static int shop_kind(void) {
+  int need = need_kind();
+  if (need == 1) return 4;
+  if (need == 2) return 5;
+  switch (gc_rnd() % 7u) {
+    case 0: case 1: return 0;
+    case 2: return 1;
+    case 3: return 2;
+    case 4: return 3;
+    default: return cleaner_room() && panels_total() >= 4 ? 6 : 0;
+  }
+}
+
 static void job_shop(uint32_t dt) {
-  static const uint8_t SHELF[5][2] = {{3, 4}, {5, 4}, {10, 4}, {12, 4}, {3, 8}};
-  int k = D.arg < 0 || D.arg > 4 ? 0 : D.arg;
+  static const uint8_t SHELF[SHOP_KINDS][2] = {{3, 4}, {5, 4}, {10, 4}, {12, 4}, {3, 8}, {13, 4}, {11, 8}};
+  int k = D.arg < 0 || D.arg >= SHOP_KINDS ? 0 : D.arg;
   switch (D.ph) {
     case 0: if (go(A_STORE, SHELF[k][0], SHELF[k][1], dt)) { D.hdir = DIR_UP; D.ph = 1; } return;
     case 1: if (work(dt, 8000, I_CLIPBOARD, POSE_STAND)) { D.hitem = k == 4 ? I_CARRY_PANEL : I_CARRY_CRATE; D.ph = 2; } return;
@@ -892,19 +1054,29 @@ static void job_shop(uint32_t dt) {
     case 3: if (work(dt, 6000, I_BUBBLE, POSE_STAND)) D.ph = 4; return;
     case 4: {
       if (k == 3) { if (go(A_NET, 12, 11, dt)) { D.hdir = DIR_RIGHT; D.ph = 5; } return; }
-      int n = D.s.crates_srv + D.s.crates_pan;
+      if (k == 6) {                                              // a cleaner robot goes to the farm screen that has room for it
+        int scr = D.s.cleaners / DC_CLEANERS_PER_SCREEN;
+        if (scr >= farm_screens()) { job_done(); return; }
+        if (farm_scr_go(scr, 7, 12, dt)) { D.hdir = DIR_UP; D.ph = 5; }
+        return;
+      }
+      int n = D.s.crates_srv + D.s.crates_pan + D.s.crates_tow;
       if (n >= 8) { job_done(); return; }                          // the dock is full: he keeps it for later (nothing lost)
       if (go(A_DOCK, crate_spot_x(n), crate_spot_y(n), dt)) { D.hdir = DIR_UP; D.ph = 5; }
       return;
     }
-    case 5:
+    case 5: {
       if (!work(dt, 3000, k == 3 ? I_SNIPS : I_BUBBLE, POSE_STAND)) return;
-      if (k == 4) { if (D.s.crates_srv + D.s.crates_pan < 8 && panels_total() + D.s.crates_pan < DC_PANELS) D.s.crates_pan++; }
-      else if (k != 3 && D.s.crates_srv + D.s.crates_pan < 8) D.s.crates_srv++;
+      int n = D.s.crates_srv + D.s.crates_pan + D.s.crates_tow;
+      if (k == 4) { if (n < 8 && panel_room()) D.s.crates_pan++; }
+      else if (k == 5) { if (n < 8 && tower_room()) D.s.crates_tow++; }
+      else if (k == 6) { if (cleaner_room()) D.s.cleaners++; }
+      else if (k != 3 && n < 8) D.s.crates_srv++;
       D.hitem = -1;
-      rebuild(A_DOCK); touch();
+      rebuild(A_DOCK); rebuild(A_ROOF); touch();
       job_done();
       return;
+    }
     default: job_done(); return;
   }
 }
@@ -990,9 +1162,10 @@ static void pick_job(void) {
   if (D.s.water_down) { job_start(GQ_ACT_WATER, 0); return; }
   if (D.truck == 2) { job_start(GQ_ACT_RECEIVE, 0); return; }
   for (int i = 0; i < DC_RACKS; i++)
-    if ((D.s.rack[i] & RK_TIER) && (D.s.rack[i] & RK_DONE) != RK_DONE) { job_start(GQ_ACT_INSTALL, 0); return; }
+    if ((g_rack[i] & RK_TIER) && (g_rack[i] & RK_DONE) != RK_DONE) { job_start(GQ_ACT_INSTALL, 0); return; }
   if (D.s.crates_srv) { job_start(GQ_ACT_INSTALL, 0); return; }
   if (D.s.crates_pan) { job_start(GQ_ACT_PANEL, 0); return; }
+  if (D.s.crates_tow) { job_start(GQ_ACT_TOWER, 0); return; }
   if (store_open() && dc_racks_done() < 3 && !D.truck) { job_start(GQ_ACT_SHOP, 0); return; }   // early on he buys the next server himself
   if (D.ev_pending) { int e = D.ev_pending; D.ev_pending = 0; job_start(GQ_ACT_EVENT, e); return; }
   int day = m >= 7 * 60 && m < 19 * 60;
@@ -1000,8 +1173,8 @@ static void pick_job(void) {
   D.idle_n++;
   switch (gc_rnd() % 12) {
     case 10: case 11: {
-      int n = D.s.crates_srv + D.s.crates_pan;
-      if (store_open() && n < 5) { job_start(GQ_ACT_SHOP, (int)(gc_rnd() % (panels_total() < DC_PANELS ? 5u : 4u))); return; }
+      int n = D.s.crates_srv + D.s.crates_pan + D.s.crates_tow;
+      if (store_open() && n < 5) { job_start(GQ_ACT_SHOP, shop_kind()); return; }
       job_start(GQ_ACT_ROUNDS, 0); return;
     }
     case 0: case 1: case 2: case 3: job_start(GQ_ACT_ROUNDS, 0); return;
@@ -1031,6 +1204,7 @@ static void hero_tick(uint32_t dt) {
     case GQ_ACT_INSPECT: job_inspect(dt); break;
     case GQ_ACT_CLEAN: job_clean(dt); break;
     case GQ_ACT_SHOP: job_shop(dt); break;
+    case GQ_ACT_TOWER: job_tower(dt); break;
     case GQ_ACT_EVENT: job_event(dt); break;
     case GQ_ACT_PANEL: job_panel(dt); break;
     case GQ_ACT_INSTALL: job_install(dt); break;
@@ -1107,23 +1281,47 @@ static void defaults(DcSave* s) {
   s->magic = SAVE_MAGIC; s->version = SAVE_VERSION; s->size = GC_SAVE_BYTES;
   s->rng = 0x1234567u;
   s->day = 1; s->minute = 9 * 60;
-  s->rack[0] = 1 | RK_DONE;     // one old server runs: the number starts small until he builds the second
-  s->slots = 2;                 // and one empty frame waits for it
-  s->crates_srv = 1;            // the second one waits on the dock
-  for (int i = 0; i < 4; i++) s->panel[i] = PN_OK;
+  s->crates_srv = 1;            // the second server waits on the dock
+  s->slots = 2;                 // one old server runs, and one empty frame waits for the second
+  s->pslots = 5;                // four panels and one empty frame
+  s->towers = 1;
   s->m_day = 0;
+}
+
+static void defaults_arrays(void) {
+  for (int i = 0; i < DC_ALL_RACKS; i++) g_rack[i] = 0;
+  for (int i = 0; i < DC_ALL_PANELS; i++) g_panel[i] = 0;
+  g_rack[0] = 1 | RK_DONE;      // one old server runs: the number starts small until he builds the second
+  for (int i = 0; i < 4; i++) g_panel[i] = PN_OK;
+}
+
+static void pack_arrays(DcSave* s) {
+  for (unsigned i = 0; i < sizeof(s->rack_p); i++) s->rack_p[i] = 0;
+  for (unsigned i = 0; i < sizeof(s->panel_p); i++) s->panel_p[i] = 0;
+  for (int i = 0; i < DC_ALL_RACKS; i++) s->rack_p[i >> 1] = (uint8_t)(s->rack_p[i >> 1] | ((g_rack[i] & 15) << ((i & 1) * 4)));
+  for (int i = 0; i < DC_ALL_PANELS; i++) s->panel_p[i >> 2] = (uint8_t)(s->panel_p[i >> 2] | ((g_panel[i] & 3) << ((i & 3) * 2)));
+}
+
+// A record that passed its checksum is still cleaned up: out-of-range values never reach the game.
+static void unpack_arrays(const DcSave* s) {
+  for (int i = 0; i < DC_ALL_RACKS; i++) {
+    int v = (s->rack_p[i >> 1] >> ((i & 1) * 4)) & 15;
+    g_rack[i] = (uint8_t)((v & RK_TIER) ? v : 0);
+  }
+  for (int i = 0; i < DC_ALL_PANELS; i++) g_panel[i] = (uint8_t)((s->panel_p[i >> 2] >> ((i & 3) * 2)) & 3);
 }
 
 static void sanitize(DcSave* s) {
   if (s->day < 1) s->day = 1;
   if (s->minute >= 1440) s->minute = 9 * 60;
-  for (int i = 0; i < DC_RACKS; i++) {
-    s->rack[i] &= (uint8_t)(RK_TIER | RK_DONE);
-    if (!(s->rack[i] & RK_TIER)) s->rack[i] = 0;
-  }
-  for (int i = 0; i < DC_PANELS; i++) s->panel[i] &= 3;
+  if (s->slots > DC_ALL_RACKS) s->slots = DC_ALL_RACKS;
+  if (s->pslots > DC_ALL_PANELS) s->pslots = DC_ALL_PANELS;
+  if (s->towers < 1) s->towers = 1;
+  if (s->towers > DC_TOWERS) s->towers = DC_TOWERS;
+  if (s->cleaners > DC_CLEANERS_PER_SCREEN * DC_SCREENS) s->cleaners = DC_CLEANERS_PER_SCREEN * DC_SCREENS;
   if (s->crates_srv > 8) s->crates_srv = 8;
   if (s->crates_srv + s->crates_pan > 8) s->crates_pan = (uint8_t)(8 - s->crates_srv);
+  if (s->crates_srv + s->crates_pan + s->crates_tow > 8) s->crates_tow = (uint8_t)(8 - s->crates_srv - s->crates_pan);
   if (s->fiber > 20) s->fiber = 20;
   if (s->boost > 250) s->boost = 250;
   s->water_down = s->water_down ? 1 : 0;
@@ -1147,7 +1345,7 @@ static void start_scene(void) {
   D.live_wx1 = wx1; D.live_flags = wf; D.clock_approx = ap; D.month = mo; D.mday = md; D.wday = wd;
   D.live_temp10 = t10; D.year = yr;
   D.hhp = 3; D.hitem = -1; D.hemote = -1; D.wire_slot = -1;
-  slots_grow();
+  slots_grow(); pslots_grow();
   D.area = A_OFFICE;
   crew_update();
   build_map();
@@ -1160,6 +1358,7 @@ static void start_scene(void) {
 void dc_init(uint32_t seed) {
   (void)seed;
   defaults(&D.s);
+  defaults_arrays();
   D.card_period = 10; D.night_quiet = 0; D.sleep_mode = 0;
   start_scene();
 }
@@ -1232,8 +1431,8 @@ void dc_status_text(char* buf, int cap) {
   switch (D.job) {
     case GQ_ACT_ROUNDS: t = D.ph == 2 ? DC_PS("SWAPPING A DRIVE") : DC_PS("MAKING THE ROUNDS"); break;
     case GQ_ACT_COFFEE: t = D.ph < 2 ? DC_PS("COFFEE BREAK") : (D.ph == 2 ? DC_PS("BACK TO THE DESK") : DC_PS("WATCHING DASHBOARDS")); break;
-    case GQ_ACT_INSPECT: t = D.arg == A_WATER ? DC_PS("CHECKING THE PUMPS") : (D.arg == A_ROOF ? DC_PS("CHECKING THE ROOF") : DC_PS("CHECKING SWITCHES")); break;
-    case GQ_ACT_CLEAN: t = (D.arg >= 0 && D.s.panel[D.arg % DC_PANELS] == PN_CRACKED) ? DC_PS("FIXING SOLAR PANEL") : DC_PS("CLEANING PANELS"); break;
+    case GQ_ACT_INSPECT: t = D.arg == A_WATER ? DC_PS("CHECKING THE PUMPS") : (D.arg == A_ROOF ? DC_PS("CHECKING THE FARM") : DC_PS("CHECKING SWITCHES")); break;
+    case GQ_ACT_CLEAN: t = (D.arg >= 0 && g_panel[D.arg % DC_ALL_PANELS] == PN_CRACKED) ? DC_PS("FIXING SOLAR PANEL") : DC_PS("CLEANING PANELS"); break;
     case GQ_ACT_EVENT: t = D.arg == 1 ? DC_PS("FIRE DRILL") : (D.arg == 2 ? DC_PS("FIXING COFFEE MAKER") : DC_PS("POWER BLIP! BREAKERS")); break;
     case GQ_ACT_PANEL: t = D.ph < 2 ? DC_PS("FETCHING A PANEL") : (D.ph == 2 ? DC_PS("PANEL TO THE ROOF") : DC_PS("MOUNTING SOLAR PANEL")); break;
     case GQ_ACT_INSTALL:
@@ -1241,13 +1440,24 @@ void dc_status_text(char* buf, int cap) {
           (D.ph <= 6 ? DC_PS("PULLING CABLE") : (D.ph <= 8 ? DC_PS("PATCHING FIBER") : DC_PS("RACK IS ONLINE")))));
       break;
     case GQ_ACT_SHOP: {
-      int k = D.arg < 0 || D.arg > 4 ? 0 : D.arg;
+      int k = D.arg < 0 || D.arg >= SHOP_KINDS ? 0 : D.arg;
       if (D.ph == 0 && D.area != A_STORE) t = DC_PS("OFF TO THE STORE");
-      else if (D.ph == 0 || D.ph == 1) t = k == 0 ? DC_PS("BUYING A SERVER") : (k == 1 ? DC_PS("BUYING RACKS") : (k == 2 ? DC_PS("BUYING CHIPS") : (k == 3 ? DC_PS("BUYING CABLES") : DC_PS("BUYING SOLAR PANEL"))));
+      else if (D.ph == 0 || D.ph == 1) {
+        switch (k) {
+          case 0: t = DC_PS("BUYING A SERVER"); break;
+          case 1: t = DC_PS("BUYING RACKS"); break;
+          case 2: t = DC_PS("BUYING CHIPS"); break;
+          case 3: t = DC_PS("BUYING CABLES"); break;
+          case 4: t = DC_PS("BUYING SOLAR PANEL"); break;
+          case 5: t = DC_PS("BUYING COOLING TOWER"); break;
+          default: t = DC_PS("BUYING A CLEANER BOT"); break;
+        }
+      }
       else if (D.ph <= 3) t = DC_PS("AT THE CHECKOUT");
-      else t = k == 3 ? DC_PS("CABLES TO NET ROOM") : DC_PS("CARRYING PURCHASE");
+      else t = k == 3 ? DC_PS("CABLES TO NET ROOM") : (k == 6 ? DC_PS("CLEANER TO THE FARM") : DC_PS("CARRYING PURCHASE"));
       break;
     }
+    case GQ_ACT_TOWER: t = D.ph < 2 ? DC_PS("FETCHING COOLING KIT") : (D.ph == 2 ? DC_PS("CARRYING COOLING KIT") : (D.ph == 3 ? DC_PS("BUILDING A TOWER") : DC_PS("MORE COOLING ONLINE"))); break;
     case GQ_ACT_RECEIVE: t = DC_PS("SIGNING FOR DELIVERY"); break;
     case GQ_ACT_WATER: t = D.ph < 8 ? DC_PS("FIXING WATER PLANT") : DC_PS("COOLING IS BACK"); break;
     case GQ_ACT_FIGHT: t = DC_PS("ROGUE ROBOT!"); break;
@@ -1271,18 +1481,23 @@ void dc_status_text(char* buf, int cap) {
 
 void dc_goal_text(char* buf, int cap) {
   int empty = -1, low = 3;
-  for (int i = 0; i < DC_RACKS; i++) {
-    int t = D.s.rack[i] & RK_TIER;
+  for (int i = 0; i < D.s.slots && i < DC_ALL_RACKS; i++) {
+    int t = g_rack[i] & RK_TIER;
     if (!t && empty < 0) empty = i;
+  }
+  for (int i = 0; i < DC_ALL_RACKS; i++) {
+    int t = g_rack[i] & RK_TIER;
     if (t && t < low) low = t;
   }
   int n = rom_cat(buf, 0, DC_PS("GOAL: "), cap);
-  if (empty >= 0) {
-    n = rom_cat(buf, n, DC_PS("FILL ROW "), cap);
-    char a[4]; fmt_uint(a, (uint32_t)(empty / 10 + 1)); str_cat(buf, n, a, cap);
-  } else if (low == 1) rom_cat(buf, n, DC_PS("GPU UPGRADES"), cap);
-  else if (low == 2) rom_cat(buf, n, DC_PS("LIQUID COOLING"), cap);
-  else rom_cat(buf, n, DC_PS("OVERCLOCKING"), cap);
+  if (D.pw_pct < 100 && panel_room()) rom_cat(buf, n, DC_PS("SOLAR"), cap);
+  else if (D.cl_pct < 100 && tower_room()) rom_cat(buf, n, DC_PS("COOLING"), cap);
+  else if (D.s.slots < DC_ALL_RACKS || empty >= 0) {
+    n = rom_cat(buf, n, DC_PS("FILL FLOOR "), cap);
+    char a[4]; fmt_uint(a, (uint32_t)((empty >= 0 ? empty : D.s.slots) / DC_RACKS + 1)); str_cat(buf, n, a, cap);
+  } else if (low == 1) rom_cat(buf, n, DC_PS("GPUS"), cap);
+  else if (low == 2) rom_cat(buf, n, DC_PS("LIQUID COOL"), cap);
+  else rom_cat(buf, n, DC_PS("OVERCLOCK"), cap);
 }
 
 void dc_date_text(char* buf, int cap) {
@@ -1315,6 +1530,7 @@ extern "C" int gc_save_export(uint8_t* buf, int cap) {
   if (gc_scene_id() != GC_SCENE_VILLAGE || !buf || cap < GC_SAVE_BYTES) return 0;
   DcSave tmp = D.s;
   sanitize(&tmp);
+  pack_arrays(&tmp);
   tmp.magic = SAVE_MAGIC; tmp.version = SAVE_VERSION; tmp.size = GC_SAVE_BYTES;
   tmp.seq = D.s.seq + 1;
   tmp.rng = gc_rng_get();
@@ -1334,6 +1550,7 @@ extern "C" int gc_save_import(const uint8_t* buf, int len) {
   for (int i = 0; i < GC_SAVE_BYTES; i++) d[i] = buf[i];
   sanitize(&tmp);
   D.s = tmp;                 // from here on nothing can fail
+  unpack_arrays(&tmp);
   start_scene();
   gc_rng_set(tmp.rng);
   gc_mark_all_dirty();
@@ -1345,6 +1562,7 @@ extern "C" uint32_t gc_save_serial(void) { return D.serial; }
 extern "C" void gc_reset_game(void) {
   if (gc_scene_id() != GC_SCENE_VILLAGE) return;
   defaults(&D.s);
+  defaults_arrays();
   start_scene();
   touch();
   gc_mark_all_dirty();
@@ -1393,7 +1611,7 @@ extern "C" int32_t gc_query(int key) {
     case GQ_Q_TLOPS_SHOWN: return (int32_t)D.tlops_shown;
     case GQ_Q_RACKS: return dc_racks_done();
     case GQ_Q_PANELS: return panels_total();
-    case GQ_Q_CRATES: return D.s.crates_srv + D.s.crates_pan;
+    case GQ_Q_CRATES: return D.s.crates_srv + D.s.crates_pan + D.s.crates_tow;
     case GQ_Q_WATER_DOWN: return D.s.water_down;
     case GQ_Q_GLITCHES: { int n = 0; for (int i = 0; i < DC_ROBOTS; i++) n += D.rb[i].on && D.rb[i].glitch; return n; }
     case GQ_Q_MISSION: return D.s.m_type;
@@ -1409,7 +1627,15 @@ extern "C" int32_t gc_query(int key) {
     case GQ_Q_SLEEP_MODE: return D.sleep_mode;
     case GQ_Q_PHASE: return D.ph;
     case GQ_Q_ABORTS: return D.aborts;
-    case GQ_Q_EMPTY_FRAMES: { int n = 0; for (int i = 0; i < DC_RACKS && i < D.s.slots; i++) if (!(D.s.rack[i] & RK_TIER)) n++; return n; }
+    case GQ_Q_EMPTY_FRAMES: { int n = 0; for (int i = 0; i < DC_ALL_RACKS && i < D.s.slots; i++) if (!(g_rack[i] & RK_TIER)) n++; return n; }
+    case GQ_Q_POWER_PCT: return D.pw_pct;
+    case GQ_Q_COOL_PCT: return D.cl_pct;
+    case GQ_Q_FLOORS: return (D.s.slots + DC_RACKS - 1) / DC_RACKS;
+    case GQ_Q_SCREENS: return farm_screens();
+    case GQ_Q_TOWERS: return D.s.towers;
+    case GQ_Q_CLEANERS: return D.s.cleaners;
+    case GQ_Q_FLOOR: return D.floor;
+    case GQ_Q_RACKS_TOTAL: return dc_racks_total();
     default: return 0;
   }
 }
@@ -1421,18 +1647,24 @@ extern "C" void gc_debug(int cmd, int32_t arg) {
     case GQ_DBG_NEXT_DAY: new_day(); break;
     case GQ_DBG_SET_MINUTE: if (arg >= 0 && arg < 1440) D.s.minute = (uint16_t)arg; break;
     case GQ_DBG_ADD_RACKS:
-      for (int n = 0; n < arg && n < 90; n++) {
+      for (int n = 0; n < arg && n < 400; n++) {
         int s = next_install_slot();
         if (s < 0) { if (D.s.boost < 250) D.s.boost++; continue; }
-        D.s.rack[s] = (uint8_t)(((D.s.rack[s] & RK_TIER) + 1) | RK_DONE);
+        g_rack[s] = (uint8_t)(((g_rack[s] & RK_TIER) + 1) | RK_DONE);
         slots_grow();
       }
       crew_update(); rebuild(A_HALL); rebuild(A_WATER); touch();
       break;
     case GQ_DBG_ADD_PANELS:
-      for (int n = 0; n < arg; n++) { int s = first_panel(PN_NONE, PN_NONE); if (s >= 0) D.s.panel[s] = PN_OK; }
+      for (int n = 0; n < arg && n < 200; n++) { int s = next_panel_slot(); if (s >= 0) { g_panel[s] = PN_OK; pslots_grow(); } }
       crew_update(); rebuild(A_ROOF); touch();
       break;
+    case GQ_DBG_ADD_TOWERS: D.s.towers = (uint8_t)(D.s.towers + (arg > 0 ? (arg > 8 ? 8 : arg) : 0) > DC_TOWERS ? DC_TOWERS : D.s.towers + (arg > 0 ? (arg > 8 ? 8 : arg) : 0)); rebuild(A_WATER); touch(); break;
+    case GQ_DBG_ADD_CLEANERS: {
+      int c = D.s.cleaners + (arg > 0 ? (arg > 12 ? 12 : arg) : 0), mx = DC_CLEANERS_PER_SCREEN * farm_screens();
+      D.s.cleaners = (uint8_t)(c > mx ? mx : c); rebuild(A_ROOF); touch();
+      break;
+    }
     case GQ_DBG_DELIVERY: if (!D.truck) { if (D.s.deliv_done) D.s.deliv_done--; truck_arrive(); } break;
     case GQ_DBG_WATER_DOWN: D.s.water_down = 1; rebuild(A_WATER); touch(); break;
     case GQ_DBG_GLITCH: { DcRobot* r = &D.rb[arg & 3]; if (r->on) { r->glitch = 1; r->hp = 3; } break; }
@@ -1452,7 +1684,7 @@ extern "C" void gc_debug(int cmd, int32_t arg) {
       if (D.area == A_MISSION && D.s.m_type && arg >= 0 && arg < D.s.m_rooms) { D.s.m_room = (uint8_t)arg; D.t = 0; room_enter(); }
       break;
     case GQ_DBG_GOTO:
-      if (arg >= 0 && arg < A_MISSION && D.area != A_MISSION) { job_done(); enter_area(arg, AREA_DOOR[arg][0], AREA_DOOR[arg][1]); }
+      if (arg >= 0 && arg < A_MISSION && D.area != A_MISSION) { job_done(); D.floor = 0; D.fscr = 0; enter_area(arg, AREA_DOOR[arg][0], AREA_DOOR[arg][1]); }
       break;
     case GQ_DBG_SHOW_CARD: dc_show_card(); break;
     case GQ_DBG_FORCE_JOB:

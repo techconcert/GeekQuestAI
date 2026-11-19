@@ -119,9 +119,10 @@ static void tiles_row(uint16_t* out, int s) {
 }
 
 static void hall_cables(uint16_t* out, int y0) {
-  for (int i = 0; i < DC_RACKS; i++) {
+  for (int j = 0; j < DC_RACKS; j++) {
+    int i = D.floor * DC_RACKS + j;
     int live = i == D.wire_slot;
-    if (!(D.s.rack[i] & RK_WIRED) && !live) continue;
+    if (!(g_rack[i] & RK_WIRED) && !live) continue;
     int rx = dc_rack_x(i) * 16, ry = dc_rack_y(i) * 16, k = i % 3;
     int sx = rx + 3 + k * 4, ty = ry - 12 + k * 4;
     int ax = 7 * 16 + (rx < 7 * 16 ? 1 : 9) + k * 2;
@@ -145,9 +146,9 @@ static void hall_cables(uint16_t* out, int y0) {
 }
 
 static void net_wires(uint16_t* out, int y0) {
-  for (int i = 0; i < DC_RACKS; i++) {
-    if (!(D.s.rack[i] & RK_PATCHED)) continue;
-    int sx = 50 + i * 139 / 29, px = 50 + ((i * 7) % 30) * 139 / 29;
+  for (int i = 0; i < DC_ALL_RACKS; i++) {
+    if (!(g_rack[i] & RK_PATCHED)) continue;
+    int sx = 50 + i * 139 / (DC_ALL_RACKS - 1), px = 50 + ((i * 7) % DC_ALL_RACKS) * 139 / (DC_ALL_RACKS - 1);
     int my = 49 + (i % 7) * 2;
     uint16_t c = g_pal[WIRE_COL[i % 3]];
     fill_rect(out, y0, sx, 44, 1, my - 44, c);
@@ -158,14 +159,29 @@ static void net_wires(uint16_t* out, int y0) {
 
 static void roof_wires(uint16_t* out, int y0) {
   uint16_t c = g_pal[P_RED];
-  for (int r = 0; r < 4; r++) {
+  for (int r = 0; r < 3; r++) {
     int last = -1;
-    for (int k = 0; k < 6; k++) if (D.s.panel[r * 6 + k]) last = k;
+    for (int k = 0; k < 10; k++) {
+      int gi = D.fscr * DC_PANELS + r * 10 + k;
+      if (g_panel[gi] || gi < D.s.pslots) last = k;
+    }
     if (last < 0) continue;
-    int y = dc_panel_y(r * 6) * 16 + 15, x0 = dc_panel_x(r * 6) * 16 + 2, vx = 9 * 16 + 4 + r * 3;
+    int y = dc_panel_y(r * 10) * 16 + 15, x0 = dc_panel_x(r * 10) * 16 + 2, vx = 13 * 16 + 4 + r * 3;
     fill_rect(out, y0, x0, y, vx - x0 + 2, 2, c);
-    fill_rect(out, y0, vx, 72, 2, y - 72 + 2, c);
-    fill_rect(out, y0, vx, 72, 10 * 16 - vx + 2, 2, c);
+    fill_rect(out, y0, vx, y, 2, 12 * 16 + 4 - y, c);
+  }
+}
+
+// little cleaner robots patrol the free lanes between the panel rows
+static void cleaner_bots(uint16_t* out, int y0) {
+  int base = D.fscr * DC_CLEANERS_PER_SCREEN, n = D.s.cleaners - base;
+  if (n > DC_CLEANERS_PER_SCREEN) n = DC_CLEANERS_PER_SCREEN;
+  for (int k = 0; k < n; k++) {
+    int lane = (5 + k * 3) * 16, ph = (D.frame * 3 + k * 37) % 160;
+    int x = 24 + (ph < 80 ? ph : 160 - ph) * 2;
+    int y = lane - 3;
+    if (y + 16 <= y0 || y >= y0 + GC_STRIP_H) continue;
+    blit_sprite(out, y0, x, y, GC_CHARS(C_CLEANER_A + ((D.frame >> 1) & 1)), 0, 0, g_pal);
   }
 }
 
@@ -244,19 +260,36 @@ static void weather_particles(uint16_t* out, int y0) {
 }
 
 // ------------------------------------------------------------------ top bar
+static uint16_t p_ok(int a, int b) { int m = a < b ? a : b; return m >= 100 ? g_ui[P_GREEN] : (m >= 70 ? g_ui[P_YELLOW] : g_ui[P_RED]); }
+
 static void hud(uint16_t* out) {
   const int y0 = 0;
   fill_rect(out, y0, 0, 0, GC_W, 16, g_ui[P_OUTLINE]);
-  char buf[8];
-  dc_tlops_text(buf, D.tlops_shown);
   int alarm = dc_alarm();
-  draw_text(out, y0, 2, 1, buf, alarm ? g_ui[P_RED] : g_ui[P_GREEN], 2, 0);
-  int x = 2 + str_len(buf) * 12 + 2;
-  draw_text(out, y0, x, 0, "TLOPS", g_ui[P_GREY], 1, 0);
-  uint32_t load = D.frame * 2654435761u;
-  for (int i = 0; i < 5; i++) {                       // activity lights under the label
-    int on = D.tlops_shown && ((load >> (i * 3)) & 7) > 1;
-    fill_rect(out, y0, x + i * 6, 9, 5, 5, on ? (alarm ? g_ui[P_YELLOW] : g_ui[P_GREEN]) : g_ui[P_DSLATE]);
+  if ((s_ms / 4000u) & 1u) {                          // every other few seconds: the power and water balance
+    for (int k = 0; k < 2; k++) {
+      int p = k ? D.cl_pct : D.pw_pct, w = (p > 100 ? 100 : p) * 56 / 100, yy = k * 8;
+      uint16_t c = p >= 100 ? g_ui[P_GREEN] : (p >= 70 ? g_ui[P_YELLOW] : g_ui[P_RED]);
+      draw_text(out, y0, 2, yy, k ? "H2O" : "PWR", g_ui[P_GREY], 1, 0);
+      fill_rect(out, y0, 24, yy + 1, 58, 6, g_ui[P_DSLATE]);
+      fill_rect(out, y0, 25, yy + 2, w, 4, c);
+    }
+    char pb[6];
+    int pn = D.pw_pct < D.cl_pct ? D.pw_pct : D.cl_pct;
+    fmt_uint(pb, (uint32_t)(pn > 999 ? 999 : pn));
+    pn = str_len(pb); pb[pn] = '%'; pb[pn + 1] = 0;
+    draw_text(out, y0, 86, 4, pb, p_ok(D.pw_pct, D.cl_pct), 1, 0);
+  } else {
+    char buf[8];
+    dc_tlops_text(buf, D.tlops_shown);
+    draw_text(out, y0, 2, 1, buf, alarm ? g_ui[P_RED] : g_ui[P_GREEN], 2, 0);
+    int x = 2 + str_len(buf) * 12 + 2;
+    draw_text(out, y0, x, 0, "TLOPS", g_ui[P_GREY], 1, 0);
+    uint32_t load = D.frame * 2654435761u;
+    for (int i = 0; i < 5; i++) {                     // activity lights under the label
+      int on = D.tlops_shown && ((load >> (i * 3)) & 7) > 1;
+      fill_rect(out, y0, x + i * 6, 9, 5, 5, on ? (alarm ? g_ui[P_YELLOW] : g_ui[P_GREEN]) : g_ui[P_DSLATE]);
+    }
   }
   // right side, from the right: clock, temperature with its icon
   const int CLK_X = GC_W - 54 - 2;
@@ -341,7 +374,7 @@ void dc_render(int s, uint16_t* out) {
   tiles_row(out, s);
   if (D.area == A_HALL) hall_cables(out, y0);
   else if (D.area == A_NET) net_wires(out, y0);
-  else if (D.area == A_ROOF) { roof_wires(out, y0); sky_things(out, y0); }
+  else if (D.area == A_ROOF) { roof_wires(out, y0); sky_things(out, y0); cleaner_bots(out, y0); }
   else if (D.area == A_DOCK) truck(out, y0);
   else if (D.area == A_WATER && !D.s.water_down) {
     for (int x = 1; x <= 7; x += 2)

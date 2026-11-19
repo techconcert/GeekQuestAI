@@ -6,7 +6,7 @@
 enum { GQ_W_CLEAR, GQ_W_CLOUDY, GQ_W_RAIN, GQ_W_STORM, GQ_W_FOG, GQ_W_SNOW, GQ_W_WINDY, GQ_W_COUNT };
 
 // What the technician is doing (value of GQ_Q_HERO_ACT). GQ_ACT_SLEEP is read by the firmware.
-enum { GQ_ACT_NONE, GQ_ACT_ROUNDS, GQ_ACT_COFFEE, GQ_ACT_INSPECT, GQ_ACT_CLEAN, GQ_ACT_SHOP, GQ_ACT_EVENT, GQ_ACT_PANEL,
+enum { GQ_ACT_NONE, GQ_ACT_ROUNDS, GQ_ACT_COFFEE, GQ_ACT_INSPECT, GQ_ACT_CLEAN, GQ_ACT_SHOP, GQ_ACT_EVENT, GQ_ACT_PANEL, GQ_ACT_TOWER,
        GQ_ACT_INSTALL, GQ_ACT_RECEIVE, GQ_ACT_WATER, GQ_ACT_MISSION, GQ_ACT_FIGHT, GQ_ACT_REST,
        GQ_ACT_SLEEP, GQ_ACT_COUNT };
 
@@ -34,7 +34,9 @@ enum {
   GQ_Q_CARD,            // 1 while the info card is on screen
   GQ_Q_LIVE_WX, GQ_Q_LIVE_TEMP, GQ_Q_LIVE_FLAGS, GQ_Q_SLEEP_MODE,
   GQ_Q_PHASE, GQ_Q_ABORTS,
-  GQ_Q_EMPTY_FRAMES     // rack frames built but still empty (the hall grows 1 to 3 at a time)
+  GQ_Q_EMPTY_FRAMES,    // rack frames built but still empty (the hall grows 1 to 3 at a time)
+  GQ_Q_POWER_PCT, GQ_Q_COOL_PCT,   // power / cooling supply as % of what the online racks ask for
+  GQ_Q_FLOORS, GQ_Q_SCREENS, GQ_Q_TOWERS, GQ_Q_CLEANERS, GQ_Q_FLOOR, GQ_Q_RACKS_TOTAL
 };
 
 // gc_debug commands (tests and the browser preview)
@@ -49,6 +51,8 @@ enum {
   GQ_DBG_MISSION,       // arg = mission 1..5 | seed << 3: start it now
   GQ_DBG_GOTO,          // arg = area 0..6: put the technician there
   GQ_DBG_SHOW_CARD,
-  GQ_DBG_FORCE_JOB,     // arg = GQ_ACT_* | detail << 8 (inspect: the area, event: 1 fire drill, 2 coffee maker, 3 power blip, shop: 0 server 1 rack 2 chips 3 cables 4 panel)
-  GQ_DBG_MISSION_ROOM   // arg = room: jump to that room of the running mission
+  GQ_DBG_FORCE_JOB,     // arg = GQ_ACT_* | detail << 8 (inspect: the area, event: 1 fire drill, 2 coffee maker, 3 power blip, shop: 0 server 1 rack 2 chips 3 cables 4 panel 5 tower 6 cleaner)
+  GQ_DBG_MISSION_ROOM,  // arg = room: jump to that room of the running mission
+  GQ_DBG_ADD_TOWERS,    // arg = n cooling towers
+  GQ_DBG_ADD_CLEANERS   // arg = n panel cleaner robots
 };

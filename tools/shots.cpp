@@ -44,7 +44,7 @@ int main(int argc, char** argv) {
   gc_set_option(GC_OPT_SLEEP_MODE, 1);
   gc_set_date(2026, 11, 16, 1, 0);
   gc_set_status(0, "IP 192.168.1.42");
-  gc_set_status(3, "FW r3");
+  gc_set_status(3, "FW r4");
   gc_set_live_weather(GQ_W_CLEAR, 235, 0);
   gc_set_clock(9, 5, 1);
   run(1000); shot(dir, "start");     // a new game: one old server, a small number
@@ -68,6 +68,7 @@ int main(int argc, char** argv) {
   gc_debug(GQ_DBG_WATER_DOWN, 0);
   wait(GQ_ACT_WATER, 1, GQ_AREA_WATER); run(4000); shot(dir, "water");
   wait(GQ_ACT_WATER, 9, -1); run(3000); shot(dir, "water_ok");
+  gc_debug(GQ_DBG_ADD_CLEANERS, 2);
   gc_debug(GQ_DBG_FORCE_JOB, GQ_ACT_INSPECT | (GQ_AREA_ROOF << 8));
   wait(GQ_ACT_INSPECT, 3, GQ_AREA_ROOF); run(3000); shot(dir, "roof");
   gc_debug(GQ_DBG_FORCE_JOB, GQ_ACT_COFFEE);
@@ -79,6 +80,18 @@ int main(int argc, char** argv) {
   gc_debug(GQ_DBG_GLITCH, 0);
   wait(GQ_ACT_FIGHT, -1, GQ_AREA_HALL); run(4000); shot(dir, "robot");
   for (int i = 0; i < 3000 && gc_query(GQ_Q_GLITCHES); i++) run(200);
+  // more floors, more farm screens, more towers: the balance of power and cooling
+  gc_debug(GQ_DBG_ADD_RACKS, 40);
+  gc_debug(GQ_DBG_ADD_TOWERS, 4);
+  gc_debug(GQ_DBG_ADD_PANELS, 25);
+  gc_debug(GQ_DBG_FORCE_JOB, GQ_ACT_INSTALL);
+  for (int i = 0; i < 9000 && gc_query(GQ_Q_FLOOR) < 1; i++) run(200);
+  run(2500); shot(dir, "floor2");
+  run(4000); shot(dir, "resources_a");
+  run(4000); shot(dir, "resources_b");
+  gc_debug(GQ_DBG_FORCE_JOB, GQ_ACT_COFFEE);
+  gc_debug(GQ_DBG_FORCE_JOB, GQ_ACT_SHOP | (6 << 8));
+  wait(GQ_ACT_SHOP, -1, GQ_AREA_ROOF); run(1500); shot(dir, "farm2");
   // missions
   static const char* MN[6] = {"", "mission_cooling", "mission_solar", "mission_storm", "mission_fiber", "mission_robots"};
   for (int m = 1; m <= 5; m++) {

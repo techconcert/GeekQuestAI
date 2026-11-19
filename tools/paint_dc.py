@@ -282,6 +282,25 @@ pa = T("PARAPET", Cell()); pa.rect(0, 8, 16, 8, "k"); pa.rect(0, 9, 16, 3, "o");
 for xx in (3, 11):
     pa.rect(xx, 12, 1, 3, "d")
 
+# ------------------------------------------------------------------ elevator, floor signs, solar farm, tower crate
+el = T("ELEVATOR", Cell("a")); el.rect(0, 0, 16, 1, "k"); el.rect(1, 1, 14, 15, "k"); el.rect(2, 2, 12, 14, "l"); el.rect(7, 2, 2, 14, "k")
+el.rect(3, 4, 3, 10, "a"); el.rect(10, 4, 3, 10, "a"); el.art(["..G..", ".GGG.", "GGGGG"], 5, 0) if False else None
+el.art([".Y.", "YYY"], 6, 2); el.art(["YYY", ".Y."], 6, 13)
+DIGITS = {
+    "1": ["..k..", ".kk..", "..k..", "..k..", ".kkk."],
+    "2": [".kkk.", "k...k", "..kk.", ".k...", "kkkkk"],
+    "3": ["kkkk.", "....k", ".kkk.", "....k", "kkkk."],
+    "4": ["k..k.", "k..k.", "kkkkk", "...k.", "...k."],
+}
+for d, art in DIGITS.items():
+    c = T("FLOOR_%s" % d, Cell("a")); c.rect(0, 0, 16, 1, "k"); c.rect(0, 12, 16, 3, "d"); c.rect(0, 15, 16, 1, "k")
+    c.rect(3, 2, 10, 9, "k"); c.rect(4, 3, 8, 7, "o")
+    c.art([r.replace("k", "d").replace(".", "o") for r in art], 5, 4)
+gr = T("GRASS", Cell("G")); speckle(gr, "l", 11, 5); speckle(gr, "s", 23, 4); speckle(gr, "w", 5, 6)
+fe = T("FENCE", Cell()); fe.rect(0, 4, 16, 2, "a"); fe.rect(0, 9, 16, 2, "a"); fe.rect(1, 2, 3, 13, "k"); fe.rect(2, 3, 1, 11, "l"); fe.rect(12, 2, 3, 13, "k"); fe.rect(13, 3, 1, 11, "l")
+ga = T("GATE", Cell("G")); speckle(ga, "s", 9, 8); ga.rect(1, 2, 2, 13, "k"); ga.rect(13, 2, 2, 13, "k"); ga.rect(3, 7, 10, 2, "Y")
+ct = T("CRATE_TOWER", Cell()); ct.rect(0, 5, 16, 11, "k"); ct.rect(1, 6, 14, 9, "B"); ct.rect(1, 6, 14, 1, "s"); ct.rect(4, 8, 8, 5, "W"); ct.rect(5, 9, 6, 1, "f"); ct.rect(5, 11, 6, 1, "w")
+
 # ------------------------------------------------------------------ office
 cl = T("COT_L", Cell()); cl.rect(1, 3, 15, 11, "k"); cl.rect(2, 4, 14, 9, "o"); cl.rect(3, 5, 5, 6, "f"); cl.rect(10, 4, 6, 9, "W"); cl.rect(1, 14, 2, 2, "k")
 cq = T("COT_R", Cell()); cq.rect(0, 3, 15, 11, "k"); cq.rect(0, 4, 14, 9, "W"); cq.rect(0, 4, 14, 1, "f"); cq.rect(4, 7, 3, 3, "w"); cq.rect(13, 14, 2, 2, "k")
@@ -396,6 +415,24 @@ ROBOTS = {
         "................",
         "................",
     ], [(1, 2, "."), (5, 2, "."), (10, 2, "."), (14, 2, "."), (1, 12, "."), (5, 12, "."), (10, 12, "."), (14, 12, ".")]),
+    "CLEANER": ([
+        "................",
+        "................",
+        "................",
+        "................",
+        "................",
+        "................",
+        "................",
+        "...kkkkkkkkkk...",
+        "..kYYYYYYYYYYk..",
+        "..koooGGoooook..",
+        "..kaaaaaaaaaak..",
+        "..kkWkkkkkkWkk..",
+        "...kk......kk...",
+        "................",
+        "................",
+        "................",
+    ], [(4, 11, "k"), (5, 11, "W"), (10, 11, "W"), (11, 11, "k"), (7, 9, "Y"), (8, 9, "Y")]),
     "OVERSEER": ([
         ".......kk.......",
         ".......kYk......",
@@ -415,7 +452,7 @@ ROBOTS = {
         "...kkkk.kkkk....",
     ], [(8, 1, "r"), (6, 10, "k"), (8, 10, "k")]),
 }
-for name in ("CRATEBOT", "SPIDER", "SWEEPER", "DRONE", "OVERSEER"):
+for name in ("CRATEBOT", "SPIDER", "SWEEPER", "DRONE", "OVERSEER", "CLEANER"):
     rows, alt = ROBOTS[name]
     a = C(name + "_A", Cell().art([r.replace(".", " ") for r in rows]))
     b = C(name + "_B", a.copy())

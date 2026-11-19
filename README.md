@@ -2,11 +2,13 @@
 
 A self-playing pixel-art game for the GeekMagic 240x240 ESP8266 clock: a little technician runs an AI
 data center on your desk, all by himself. You never press anything. He signs for deliveries, racks new
-hardware, pulls the cables (you can watch them being laid), keeps the water plant and the rooftop
-solar running, fights his robo-engineers when they go rogue, and sleeps on a cot in the office.
+hardware on floor after floor (the elevator takes him up), pulls the cables, keeps the water plant and the
+solar farm in balance with a crew of little cleaner robots, fights his robo-engineers when they go rogue, and sleeps on a cot in the office.
 
-The only number on screen is **TLOPS**, top left: what the data center produces. It grows with every
-rack he brings online and dips while something is broken. The rest of the top bar is the real weather
+The big number on screen is **TLOPS**, top left: what the data center produces. It grows with every
+rack he brings online and dips while something is broken. Every few seconds the same spot shows the
+**PWR** and **H2O** bars instead: power from the solar farm and cooling from the water towers, each as a
+percentage of what the racks ask for. Under 100% and the number is throttled, so he has to keep building. The rest of the top bar is the real weather
 (icon and temperature for the place you choose) and the time. The bottom line shows, in turn, what he
 is doing, the current goal, the clock's IP address, the date and the firmware version.
 
@@ -43,15 +45,27 @@ Screenshots from the game core the clock runs, one per room.
 |---|---|
 | ![Rogue robot](docs/screenshots/robot.png) | ![Info card](docs/screenshots/card.png) |
 
+| Second floor | Resource bars | Resource bars (other view) | Solar farm, second screen |
+|---|---|---|---|
+| ![Floor 2](docs/screenshots/floor2.png) | ![Power and cooling](docs/screenshots/resources_b.png) | ![TLOPS](docs/screenshots/resources_a.png) | ![Farm](docs/screenshots/farm2.png) |
+
 ## How it plays
 
 - **Building.** One or two trucks a day bring crates. A server crate becomes a new rack (or, once the
-  hall of 30 racks is full, a GPU and then a liquid-cooling upgrade, then overclocking). A rack counts
-  only when it is racked, wired to the network room door and patched. Solar crates become roof panels.
+  building of 120 racks is full, a GPU and then a liquid-cooling upgrade, then overclocking). A rack counts
+  only when it is racked, wired to the network room door and patched. Solar crates become panels on the farm, cooling crates become water towers.
 - **The hall grows a little at a time.** There are never more than three empty rack frames waiting: when
-  the last empty frame is taken, one to three new ones appear (random), up to 30.
+  the last empty frame is taken, one to three new ones appear (random). A floor holds 30 racks; when it is
+  full the elevator at the left of the hall gets a new floor (up to 4 floors, 120 racks) and he rides up
+  to fill it and upgrade its hardware.
+- **Power and water are resources.** Racks need power (solar panels, 4 each, plus a little from cleaner
+  robots) and cooling (towers). More or better racks eat more, so he keeps adding panels (outside, on a
+  fenced solar farm of 30 panels a screen, up to 4 screens linked by gates) and cooling towers (up to 7).
+  The lower of the two percentages throttles TLOPS.
+- **Cleaner robots.** He buys little solar-panel cleaner robots at the store (3 per farm screen); they
+  patrol the farm and wipe dirty panels, which saves him trips.
 - **The hardware store.** Between jobs, from 08:00 to 19:00, he walks to the store off the server hall
-  and buys cables, racks, servers, chips or a solar panel (it is all free). The goods go to the dock to be
+  and buys cables, racks, servers, chips, solar panels, cooling towers or cleaner robots (it is all free). The goods go to the dock to be
   racked, the cables to the network room. Early on, when no server is waiting, he goes shopping for the
   next one himself.
 - **A small start.** A new game begins with a single old server (6 T) and one crate on the dock; the
@@ -61,7 +75,7 @@ Screenshots from the game core the clock runs, one per room.
 - **Things break.** The water plant fails now and then: output halves until he has worked on the pump
   and both valves. Panels get dirty or crack (more in storms, wind and snow, from the live weather).
 - **Robo-engineers.** A crate-bot, a sweeper and a cable-spider join as the hall grows, a drone on the
-  roof. Now and then one goes rogue (red eyes): he chases it and knocks sense into it with a wrench.
+  solar farm. Now and then one goes rogue (red eyes): he chases it and knocks sense into it with a wrench.
   If he loses he naps on the cot for two minutes and the robot reboots itself.
 - **One long mission a day**, 20 to 30 rooms rebuilt from a seed (nothing stored), roughly 30 to 50
   minutes; the bottom line shows for example `COOLING LOOP 9/22`. A mission survives a power cut.
@@ -119,7 +133,7 @@ install**. The clock itself never talks to GitHub. The same checks run on the fi
 
 - **Weather:** search a city (foreign places work), or type latitude and longitude. Celsius is the
   default, Fahrenheit is an option. The clock asks [Open-Meteo](https://open-meteo.com/) (free, no
-  account, plain HTTP) every 30 minutes and shows the icon and temperature on the top bar; the roof
+  account, plain HTTP) every 30 minutes and shows the icon and temperature on the top bar; the solar farm
   shows it (rain and snow fall there, storms and wind wear the solar panels).
 - **Sleep:** a sleep time and a wake time. The technician walks to the office and lies down on the cot, the screen and
   game go dark, the CPU slows down, and the clock keeps the time. At the wake time everything

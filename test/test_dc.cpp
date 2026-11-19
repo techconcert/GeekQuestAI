@@ -53,11 +53,13 @@ static void test_soak() {
   CHECK(saw1 && saw3 && max_empty <= 3);       // never more than 3 empty frames at a time
   std::printf("soak: racks %d panels %d tlops %d installs %d fights %d missions %d\n", q(GQ_Q_RACKS), q(GQ_Q_PANELS),
               q(GQ_Q_TLOPS), q(GQ_Q_INSTALLS), q(GQ_Q_FIGHTS), q(GQ_Q_MISSIONS));
-  CHECK(q(GQ_Q_RACKS) == DC_RACKS);                 // the hall is full after six weeks
+  CHECK(q(GQ_Q_RACKS) == DC_ALL_RACKS);             // all four floors are full after six weeks
+  CHECK(q(GQ_Q_FLOORS) == DC_FLOORS && q(GQ_Q_SCREENS) >= 2 && q(GQ_Q_TOWERS) >= 3 && q(GQ_Q_CLEANERS) >= 1);
+  std::printf("soak: floors %d screens %d towers %d cleaners %d power %d%% cooling %d%%\n", q(GQ_Q_FLOORS), q(GQ_Q_SCREENS), q(GQ_Q_TOWERS), q(GQ_Q_CLEANERS), q(GQ_Q_POWER_PCT), q(GQ_Q_COOL_PCT));
   CHECK(q(GQ_Q_TLOPS) > last_tlops * 20);
   CHECK(q(GQ_Q_MISSIONS) >= 35);                    // about one long mission a day
   CHECK(q(GQ_Q_FIGHTS) > 10);
-  CHECK(q(GQ_Q_PANELS) >= 12);
+  CHECK(q(GQ_Q_PANELS) >= 30);
   for (int a = GQ_ACT_ROUNDS; a < GQ_ACT_COUNT; a++) if (!seen_act[a] && a != GQ_ACT_FIGHT) { std::printf("activity %d never seen\n", a); std::exit(1); }
   for (int a = 0; a < GQ_AREA_COUNT; a++) if (!seen_area[a]) { std::printf("area %d never seen\n", a); std::exit(1); }
 }
@@ -75,8 +77,9 @@ static void test_small_start() {
 
 // The hardware store: every purchase walks to the store, pays, and carries the goods to the dock (cables to the network room).
 static void test_store() {
-  for (int kind = 0; kind < 5; kind++) {
+  for (int kind = 0; kind < 7; kind++) {
     sim_start((uint32_t)(300 + kind), 10 * 60);
+    if (kind == 6) gc_debug(GQ_DBG_ADD_PANELS, 30);
     gc_debug(GQ_DBG_FORCE_JOB, GQ_ACT_SHOP | (kind << 8));
     int crates = q(GQ_Q_CRATES), panels = 0, in_store = 0, secs = 0, areas = 0;
     (void)panels;
@@ -99,6 +102,26 @@ static void test_store() {
 }
 
 // Each mission runs to its end by itself, 20 to 30 rooms, within the time limit.
+// Power and cooling are resources: more racks than supply throttles the number; supply restores it.
+static void test_resources() {
+  sim_start(55, 9 * 60);
+  gc_debug(GQ_DBG_ADD_RACKS, 40);
+  sim_minutes(1);
+  int p0 = q(GQ_Q_POWER_PCT), c0 = q(GQ_Q_COOL_PCT), t0 = q(GQ_Q_TLOPS);
+  CHECK(p0 < 100 || c0 < 100);
+  gc_debug(GQ_DBG_ADD_PANELS, 60);
+  gc_debug(GQ_DBG_ADD_TOWERS, 7);
+  sim_minutes(1);
+  CHECK(q(GQ_Q_POWER_PCT) > p0 && q(GQ_Q_COOL_PCT) > c0);
+  CHECK(q(GQ_Q_TLOPS) >= t0);
+  CHECK(q(GQ_Q_FLOORS) >= 2 && q(GQ_Q_SCREENS) >= 2);
+  gc_debug(GQ_DBG_ADD_CLEANERS, 99);
+  CHECK(q(GQ_Q_CLEANERS) <= DC_CLEANERS_PER_SCREEN * q(GQ_Q_SCREENS));
+  sim_minutes(600);
+  CHECK(q(GQ_Q_ABORTS) == 0);
+  std::printf("resources: power %d%% -> %d%%, cooling %d%% -> %d%%\n", p0, q(GQ_Q_POWER_PCT), c0, q(GQ_Q_COOL_PCT));
+}
+
 static void test_missions() {
   for (int type = 1; type < GQ_MIS_COUNT; type++)
     for (int seed = 1; seed <= 6; seed++) {
@@ -159,9 +182,9 @@ static void test_save() {
   // a record full of out-of-range values with a valid checksum is cleaned up, not trusted
   DcSave s;
   std::memcpy(&s, b, sizeof(s));
-  std::memset(s.rack, 0xFF, sizeof(s.rack));
-  std::memset(s.panel, 0xFF, sizeof(s.panel));
-  s.crates_srv = 200; s.crates_pan = 200; s.m_type = 77; s.m_room = 99; s.minute = 9999; s.day = 0; s.fiber = 255;
+  std::memset(s.rack_p, 0xFF, sizeof(s.rack_p));
+  std::memset(s.panel_p, 0xFF, sizeof(s.panel_p));
+  s.crates_srv = 200; s.crates_pan = 200; s.crates_tow = 200; s.towers = 99; s.cleaners = 99; s.slots = 250; s.pslots = 250; s.m_type = 77; s.m_room = 99; s.minute = 9999; s.day = 0; s.fiber = 255;
   std::memcpy(b, &s, sizeof(s));
   extern uint32_t test_crc(const uint8_t*, int);
   uint32_t c = test_crc(b + 12, GC_SAVE_BYTES - 12);
@@ -278,6 +301,7 @@ int main() {
   test_store();
   test_missions();
   test_save();
+  test_resources();
   test_soak();
   std::printf("test_dc: ok (%u frames rendered)\n", (unsigned)gqt::rendered_frames);
   return 0;

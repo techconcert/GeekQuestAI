@@ -51,10 +51,10 @@
         <button id="b-glitch">goes rogue</button></div>
       <div class="row"><select id="mission"><option value="1">Cooling loop</option><option value="2">Solar build</option><option value="3">Storm repair</option><option value="4">Fiber hunt</option><option value="5">Robot uprising</option></select>
         <input type="number" id="m-seed" placeholder="seed" style="width:90px"><button id="b-mission">Start mission</button><button id="b-lastroom">Jump to last room</button></div>
-      <div class="row"><button id="b-rack1">+1 rack</button><button id="b-rack10">+10 racks</button><button id="b-panel3">+3 solar panels</button></div>
-      <div class="row"><select id="area"><option value="0">Server hall</option><option value="1">Network room</option><option value="2">Loading dock</option><option value="3">Water plant</option><option value="4">Roof</option><option value="5">Office</option><option value="6">Hardware store</option></select>
+      <div class="row"><button id="b-rack1">+1 rack</button><button id="b-rack10">+10 racks</button><button id="b-panel3">+3 solar panels</button><button id="b-tower">+1 cooling tower</button><button id="b-cleaner">+1 cleaner bot</button></div>
+      <div class="row"><select id="area"><option value="0">Server hall</option><option value="1">Network room</option><option value="2">Loading dock</option><option value="3">Water plant</option><option value="4">Solar farm</option><option value="5">Office</option><option value="6">Hardware store</option></select>
         <button id="b-goto">Put him there</button></div>
-      <div class="row"><select id="job"><option value="1">Rounds</option><option value="2">Coffee and desk</option><option value="1027">Check the roof</option><option value="771">Check the pumps</option><option value="4">Clean panels</option><option value="262">Fire drill</option><option value="518">Coffee maker broke</option><option value="774">Power blip</option><option value="5">Shop: a server</option><option value="261">Shop: racks</option><option value="517">Shop: chips</option><option value="773">Shop: cables</option><option value="1029">Shop: a solar panel</option></select>
+      <div class="row"><select id="job"><option value="1">Rounds</option><option value="2">Coffee and desk</option><option value="1027">Check the farm</option><option value="771">Check the pumps</option><option value="4">Clean panels</option><option value="262">Fire drill</option><option value="518">Coffee maker broke</option><option value="774">Power blip</option><option value="5">Shop: a server</option><option value="261">Shop: racks</option><option value="517">Shop: chips</option><option value="773">Shop: cables</option><option value="1029">Shop: a solar panel</option><option value="1285">Shop: a cooling tower</option><option value="1541">Shop: a cleaner bot</option></select>
         <button id="b-job">Do it now</button></div>
     </div>
     <h2>Weather, sleep, network</h2>
@@ -84,17 +84,17 @@
   // must match lib/gamecore/src/gq_types.h
   const Q = {}; ["DAY", "MINUTE", "HERO_AREA", "HERO_ACT", "HERO_TILE", "HERO_ABED", "TLOPS", "TLOPS_SHOWN", "RACKS", "PANELS", "CRATES",
     "WATER_DOWN", "GLITCHES", "MISSION", "MISSION_ROOM", "MISSION_ROOMS", "INSTALLS", "FIGHTS", "MISSIONS", "CARD", "LIVE_WX", "LIVE_TEMP",
-    "LIVE_FLAGS", "SLEEP_MODE", "PHASE", "ABORTS", "EMPTY_FRAMES"].forEach((k, i) => { Q[k] = i; });
+    "LIVE_FLAGS", "SLEEP_MODE", "PHASE", "ABORTS", "EMPTY_FRAMES", "POWER_PCT", "COOL_PCT", "FLOORS", "SCREENS", "TOWERS", "CLEANERS", "FLOOR", "RACKS_TOTAL"].forEach((k, i) => { Q[k] = i; });
   const DBG = {}; ["SET_DAY", "NEXT_DAY", "SET_MINUTE", "ADD_RACKS", "ADD_PANELS", "DELIVERY", "WATER_DOWN", "GLITCH", "MISSION", "GOTO",
-    "SHOW_CARD", "FORCE_JOB", "MISSION_ROOM"].forEach((k, i) => { DBG[k] = i; });
+    "SHOW_CARD", "FORCE_JOB", "MISSION_ROOM", "ADD_TOWERS", "ADD_CLEANERS"].forEach((k, i) => { DBG[k] = i; });
   const NAMES = {
-    HERO_AREA: ["server hall", "network room", "loading dock", "water plant", "roof", "office", "hardware store", "mission room"],
-    HERO_ACT: ["none", "rounds", "coffee", "inspecting", "cleaning panels", "shopping", "event", "solar panel", "installing", "delivery", "water plant",
+    HERO_AREA: ["server hall", "network room", "loading dock", "water plant", "solar farm", "office", "hardware store", "mission room"],
+    HERO_ACT: ["none", "rounds", "coffee", "inspecting", "cleaning panels", "shopping", "event", "solar panel", "cooling tower", "installing", "delivery", "water plant",
       "mission", "robot fight", "resting", "sleeping"],
     MISSION: ["none", "cooling loop", "solar build", "storm repair", "fiber hunt", "robot uprising"],
   };
   const READ = ["DAY", "MINUTE", "HERO_AREA", "HERO_ACT", "TLOPS", "RACKS", "PANELS", "CRATES", "WATER_DOWN", "GLITCHES", "MISSION",
-    "MISSION_ROOM", "MISSION_ROOMS", "INSTALLS", "FIGHTS", "MISSIONS", "HERO_ABED", "ABORTS"];
+    "MISSION_ROOM", "MISSION_ROOMS", "INSTALLS", "FIGHTS", "MISSIONS", "HERO_ABED", "ABORTS", "POWER_PCT", "COOL_PCT", "FLOORS", "SCREENS", "TOWERS", "CLEANERS"];
   const cells = {};
   READ.forEach((k) => { const dt = document.createElement("dt"), dd = document.createElement("dd"); dt.textContent = k.toLowerCase().replace(/_/g, " "); $("readout").append(dt, dd); cells[k] = dd; });
   const pad2 = (n) => String(n).padStart(2, "0");
@@ -188,6 +188,8 @@
     $("b-rack1").addEventListener("click", () => dbg(DBG.ADD_RACKS, 1));
     $("b-rack10").addEventListener("click", () => dbg(DBG.ADD_RACKS, 10));
     $("b-panel3").addEventListener("click", () => dbg(DBG.ADD_PANELS, 3));
+    $("b-tower").addEventListener("click", () => dbg(DBG.ADD_TOWERS, 1));
+    $("b-cleaner").addEventListener("click", () => dbg(DBG.ADD_CLEANERS, 1));
     $("b-goto").addEventListener("click", () => dbg(DBG.GOTO, +$("area").value));
     $("b-job").addEventListener("click", () => dbg(DBG.FORCE_JOB, +$("job").value));
     ["lw-wx", "lw-temp", "lw-f", "lw-night", "sleep-mode", "card-period", "wifi-down"].forEach((id) => $(id).addEventListener("change", env));
