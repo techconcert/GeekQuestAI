@@ -377,7 +377,7 @@ void dc_render(int s, uint16_t* out) {
   else if (D.area == A_ROOF) { roof_wires(out, y0); sky_things(out, y0); cleaner_bots(out, y0); }
   else if (D.area == A_DOCK) truck(out, y0);
   else if (D.area == A_WATER && !D.s.water_down) {
-    for (int x = 1; x <= 7; x += 2)
+    for (int x = 1; x <= 13; x += 2)
       if (g_obj[3][x] == T_TOWER_TOP_A) item(out, y0, x * 16 + (int)(D.frame & 1) * 2, 3 * 16 - 14, I_STEAM_A + (D.frame & 1), g_ui);
   }
   for (int pass = 0; pass < 2; pass++) {

@@ -129,6 +129,13 @@ browser (not the clock) asks GitHub for `latest.json` on the `builds` branch, te
 build exists, and **Download it** loads the file into the page for you; you then press **Upload and
 install**. The clock itself never talks to GitHub. The same checks run on the file as for a manual upload.
 
+**Switch game mode** (under Firmware update): pick GeekQuest (the village) or GeekQuestAI, press **Look up
+latest version**, and your browser reads that game's `latest.json` from its own public `builds` branch
+(read only). It shows the version, warns that the game you are playing now is not carried over (each game
+has its own save; a MiniGodus world save does not carry over either; WiFi and settings stay), and after you
+confirm it downloads the `.bin` and sends it through the normal upload and its checks. It has its own
+script block, so the upload form works even if it fails. The clock itself never talks to GitHub.
+
 **Clock settings** (`/config`):
 
 - **Weather:** search a city (foreign places work), or type latitude and longitude. Celsius is the

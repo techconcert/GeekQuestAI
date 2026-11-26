@@ -55,7 +55,7 @@ static const uint32_t AP_GRACE_MS = 10UL * 60 * 1000;  // AP stays up 10 min aft
 // RECOVERY-CHANGE (chunk1): CRASHES_FOR_* moved to lib/gqsafe/src/bootlogic.h
 // RECOVERY-CHANGE (chunk1): revision 2 = chunk 1 (design 8.10 rule 6); 3 = R2 (no game saving, automatic restarts on)
 // RECOVERY-CHANGE (R3-0F): revision 5 = R3 plumbing (web() accessor, webout.h, weather strike words, boot kind, spare sector probe)
-static const uint32_t GQ_RECOVERY_REV = 12;
+static const uint32_t GQ_RECOVERY_REV = 13;
 // RECOVERY-CHANGE (chunk1): timers of the restart gates
 static const uint32_t SLOW_STABLE_MS = 6UL * 3600 * 1000;   // `slow` counter cleared after 6 h of uptime
 static const uint32_t AUTO_MIN_UPTIME_MS = 30UL * 60 * 1000;
@@ -403,6 +403,31 @@ ck.onclick=async()=>{up.className='';up.textContent='Checking GitHub...';
  }catch(e){up.className='warn';up.textContent='Could not reach GitHub from this browser. Choose the file by hand.'}};
 </script>)HTML";
 
+// RECOVERY-CHANGE (r5): "Switch game mode". It lives in its own box and its own <script> after the upload script, so an
+// error in it can never stop the upload form above. It only looks up the other game's latest.json in the browser,
+// asks for a confirmation, downloads that game's .bin in the browser and hands it to the upload form's own checks and
+// upload (/update). The clock itself sends nothing anywhere.
+static const char PAGE_UPDATE_C[] PROGMEM = R"HTML(<div class="box"><h3>Switch game mode</h3>
+<p>Install a different game on this clock. Choose one, look up its latest version, confirm, and it is downloaded in this browser and installed through the upload above (same checks).</p>
+<select id="gm"><option value="GeekQuest">GeekQuest (the village)</option><option value="GeekQuestAI">GeekQuestAI (the data center)</option></select>
+<button id="gl" type="button">Look up latest version</button><p id="gs"></p></div>
+<script>
+try{(function(){const gm=document.getElementById('gm'),gl=document.getElementById('gl'),gs=document.getElementById('gs');
+gm.value='GeekQuestAI';
+gl.onclick=async()=>{gs.className='';gs.textContent='Checking GitHub...';const g=gm.value,B='https://raw.githubusercontent.com/techconcert/'+g+'/builds/';
+ try{const j=await(await fetch(B+'latest.json?'+Date.now(),{cache:'no-store'})).json(),cur=(await(await fetch('/info')).json()).version,same=g==='GeekQuestAI'&&cur.indexOf(j.commit)>=0;
+  gs.textContent=g+' '+j.version+' ('+j.commit+'). This clock runs '+cur+'. '+(same?'That is the version already installed. ':'');
+  const w=document.createElement('p');w.className='warn';w.textContent='The game you are playing now is not carried over (each game keeps its own save, and a MiniGodus world save does not carry over either). WiFi and settings stay.';
+  const b=document.createElement('button');b.type='button';b.textContent='Yes, download and install '+g+' '+j.version;gs.append(w,b);
+  b.onclick=async()=>{b.disabled=true;gs.textContent='Downloading '+j.bin.split('/').pop()+'...';
+   try{const r=await fetch(B+j.bin);if(!r.ok)throw 0;const a=await r.arrayBuffer();gs.textContent='Downloaded '+a.byteLength+' bytes. Checking it...';
+    pick(new File([a],j.bin.split('/').pop()));
+    setTimeout(()=>{if(go.disabled){gs.className='warn';gs.textContent='The file did not pass the check above. Nothing was installed.'}else{gs.className='ok';gs.textContent='Installing '+g+' '+j.version+'... do not unplug the clock.';go.click()}},1500)
+   }catch(e){gs.className='warn';gs.textContent='Download failed. Nothing was installed.'}}
+ }catch(e){gs.className='warn';gs.textContent='Could not reach GitHub from this browser (the rescue network has no internet). Choose the file by hand above.'}}
+})()}catch(e){}
+</script>)HTML";
+
 static const char PAGE_WIFI[] PROGMEM = R"HTML(<h2>WiFi setup</h2><div class='box'><form method='post' action='/wifi'>
 Network name<input name='ssid' maxlength='32'>Password<input name='pass' type='password' maxlength='64'>
 <button>Save and connect</button></form><p><small>Saved in the ESP8266's own WiFi settings area, not in the stock firmware's files.</small></p></div><p><a href='/'>Back</a></p>)HTML";
@@ -631,6 +656,7 @@ static void handleUpdatePage() {
   server.sendContent_P(PAGE_UPDATE_FORCE);
 #endif
   server.sendContent_P(PAGE_UPDATE_B);
+  server.sendContent_P(PAGE_UPDATE_C);
   endPage();
 }
 
