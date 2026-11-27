@@ -129,7 +129,7 @@ browser (not the clock) asks GitHub for `latest.json` on the `builds` branch, te
 build exists, and **Download it** loads the file into the page for you; you then press **Upload and
 install**. The clock itself never talks to GitHub. The same checks run on the file as for a manual upload.
 
-**Switch game mode** (under Firmware update): pick GeekQuest (the village) or GeekQuestAI, press **Look up
+**Switch game mode** (under Firmware update): pick GeekQuest (the village), GeekQuestAI or MiniGodus (the world), press **Look up
 latest version**, and your browser reads that game's `latest.json` from its own public `builds` branch
 (read only). It shows the version, warns that the game you are playing now is not carried over (each game
 has its own save; a MiniGodus world save does not carry over either; WiFi and settings stay), and after you

@@ -1,5 +1,4 @@
-What is new in GeekQuestAI r5:
+What is new in GeekQuestAI r6:
 
-- New "Switch game mode" box under Firmware update on the clock's web page. Choose GeekQuest or GeekQuestAI, look up the latest version, confirm (it warns that your current game progress, and a MiniGodus world save, does not carry over), and it is downloaded in your browser and installed through the normal update upload with its usual checks.
-- It only reads the other games' public builds (latest.json); the clock itself sends nothing. The update page, upload checks and rescue hotspot are unchanged and the new box has its own script, so the upload works even if it fails.
-- Cooling towers 5 to 7 now show steam like the first four.
+- "Switch game mode" now also offers MiniGodus (the world). Choose it, look up its latest version, confirm, and it is downloaded in your browser and installed through the normal update upload with its usual checks. GeekQuest and GeekQuestAI stay on the list.
+- Same safety as r5: the lookup only reads the other games' public builds, the clock itself sends nothing, and the new box has its own script so the upload form works even if it fails. A game's progress does not carry over between games.
