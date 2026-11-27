@@ -1,3 +1,3 @@
-SDP_GeekQuestAI_quest_r6-27851e5.bin
-SDP_GeekQuestAI_test_r6-27851e5.bin
+SDP_GeekQuestAI_quest_r7-7f1dabb.bin
+SDP_GeekQuestAI_test_r7-7f1dabb.bin
 Flash only the files listed here. Files in firmware/obsolete are old.
