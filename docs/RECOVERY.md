@@ -47,7 +47,7 @@ The status page also shows read-only lines about two flash areas: **Stock data s
 
 R7 adds a browser-side "Check for a new version" button to the update page. It runs only in your browser (GitHub is read from there), the clock sends nothing to GitHub, and the downloaded file goes through exactly the same upload route and checks as a file you pick by hand. R7 also removes the serial debug output (Serial is no longer used anywhere).
 
-GeekQuestAI r5 adds "Switch game mode" to the update page: a separate box with its own script that looks up the chosen game's (GeekQuest, GeekQuestAI or MiniGodus) `latest.json` in your browser, asks you to confirm, downloads its `.bin` and feeds it to the same upload form and checks. The upload form, the rescue network and the rest of the recovery layer are unchanged.
+GeekQuestAI r5 added "Switch game mode" to the update page and r7 turned it into buttons (one per other game; this game is not listed): a separate box with its own script that looks up the chosen game's `latest.json` in your browser, asks you to confirm, downloads its `.bin` and feeds it to the same upload form and checks, then greys out every button once the install has finished. The upload form, the rescue network and the rest of the recovery layer are unchanged.
 
 ## Before you install a new version (pre-flash checklist)
 

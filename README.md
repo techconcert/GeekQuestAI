@@ -129,6 +129,23 @@ browser (not the clock) asks GitHub for `latest.json` on the `builds` branch, te
 build exists, and **Download it** loads the file into the page for you; you then press **Upload and
 install**. The clock itself never talks to GitHub. The same checks run on the file as for a manual upload.
 
+**Switch game mode** (under Firmware update): one button per other game (GeekQuest and MiniGodus; the
+game this clock already runs is not listed). Press one and your browser reads that game's `latest.json`
+from its own public `builds` branch (read only) and shows the latest version. It warns that the game you
+are playing now is not carried over (each game has its own save; a MiniGodus world save does not carry
+over either; WiFi and settings stay). After you confirm, it downloads the `.bin` and sends it through the
+normal upload and its checks. When the install has finished and the clock is about to restart, every
+button on the page is greyed out and cannot be clicked. The box has its own script block, so the upload
+form works even if it fails. The clock itself never talks to GitHub.
+
+**Clock settings** are buttons in the first tile, **WiFi setup** is
+in the Network tile.
+
+**Update firmware** (`/update`): choose a `.bin` by hand, or press **Check for a new version**: your
+browser (not the clock) asks GitHub for `latest.json` on the `builds` branch, tells you if a newer
+build exists, and **Download it** loads the file into the page for you; you then press **Upload and
+install**. The clock itself never talks to GitHub. The same checks run on the file as for a manual upload.
+
 **Switch game mode** (under Firmware update): pick GeekQuest (the village), GeekQuestAI or MiniGodus (the world), press **Look up
 latest version**, and your browser reads that game's `latest.json` from its own public `builds` branch
 (read only). It shows the version, warns that the game you are playing now is not carried over (each game

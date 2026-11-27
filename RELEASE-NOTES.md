@@ -1,4 +1,6 @@
-What is new in GeekQuestAI r6:
+What is new in GeekQuestAI r7:
 
-- "Switch game mode" now also offers MiniGodus (the world). Choose it, look up its latest version, confirm, and it is downloaded in your browser and installed through the normal update upload with its usual checks. GeekQuest and GeekQuestAI stay on the list.
-- Same safety as r5: the lookup only reads the other games' public builds, the clock itself sends nothing, and the new box has its own script so the upload form works even if it fails. A game's progress does not carry over between games.
+- Switch game mode now uses one button per game, like GeekQuest, instead of a dropdown.
+- The game this clock already runs (GeekQuestAI) is no longer in the list: it offers GeekQuest and MiniGodus.
+- Once an install has finished and the clock is waiting to restart, every button on the update page is greyed out and cannot be clicked.
+- Same safety as before: the lookup only reads the other games' public builds, the upload and its checks are unchanged, and the new box has its own script so the upload form works even if it fails.
